@@ -1,0 +1,800 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'SecureAuditAI Agent - Complete serverless cybersecurity compliance auditing platform with Amazon Bedrock AgentCore'
+
+# Parameters for configuration
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - test
+      - prod
+    Description: Environment name for resource naming
+
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-3-5-sonnet-20241022-v2:0
+    Description: Bedrock model ID for compliance analysis
+
+  CognitoDomainPrefix:
+    Type: String
+    Description: Unique domain prefix for Cognito (must be globally unique)
+
+# Mappings for configuration
+Mappings:
+  EnvironmentConfig:
+    dev:
+      LogRetentionDays: 7
+      ScanSchedule: rate(24 hours)
+    test:
+      LogRetentionDays: 30
+      ScanSchedule: rate(12 hours)
+    prod:
+      LogRetentionDays: 90
+      ScanSchedule: rate(6 hours)
+
+# Resources
+Resources:
+  # S3 Buckets
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-reports-${Environment}'
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldReports
+            Status: Enabled
+            ExpirationInDays: !FindInMap [EnvironmentConfig, !Ref Environment, LogRetentionDays]
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-frontend-${Environment}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+
+  # DynamoDB Tables
+  AuditRunsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-AuditRuns-${Environment}'
+      AttributeDefinitions:
+        - AttributeName: AuditRunId
+          AttributeType: S
+        - AttributeName: Status
+          AttributeType: S
+        - AttributeName: CreatedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: AuditRunId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: Status
+              KeyType: HASH
+            - AttributeName: CreatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: CreatedAtIndex
+          KeySchema:
+            - AttributeName: CreatedAt
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  FindingsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-Findings-${Environment}'
+      AttributeDefinitions:
+        - AttributeName: FindingId
+          AttributeType: S
+        - AttributeName: AuditRunId
+          AttributeType: S
+        - AttributeName: Severity
+          AttributeType: S
+        - AttributeName: ResourceType
+          AttributeType: S
+        - AttributeName: CreatedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: FindingId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: AuditRunIndex
+          KeySchema:
+            - AttributeName: AuditRunId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: SeverityIndex
+          KeySchema:
+            - AttributeName: Severity
+              KeyType: HASH
+            - AttributeName: CreatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: ResourceTypeIndex
+          KeySchema:
+            - AttributeName: ResourceType
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  ComplianceSnapshotsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-ComplianceSnapshots-${Environment}'
+      AttributeDefinitions:
+        - AttributeName: SnapshotId
+          AttributeType: S
+        - AttributeName: AuditRunId
+          AttributeType: S
+        - AttributeName: ComplianceFramework
+          AttributeType: S
+        - AttributeName: CreatedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: SnapshotId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: AuditRunIndex
+          KeySchema:
+            - AttributeName: AuditRunId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: FrameworkIndex
+          KeySchema:
+            - AttributeName: ComplianceFramework
+              KeyType: HASH
+            - AttributeName: CreatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  # IAM Roles for Lambda functions
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-LambdaExecutionRole-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !GetAtt AuditRunsTable.Arn
+                  - !GetAtt FindingsTable.Arn
+                  - !GetAtt ComplianceSnapshotsTable.Arn
+                  - !Sub '${AuditRunsTable.Arn}/index/*'
+                  - !Sub '${FindingsTable.Arn}/index/*'
+                  - !Sub '${ComplianceSnapshotsTable.Arn}/index/*'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ReportsBucket.Arn
+                  - !Sub '${ReportsBucket.Arn}/*'
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:GetFoundationModel
+                Resource:
+                  - !Sub 'arn:aws:bedrock:*:*:foundation-model/${BedrockModelId}'
+
+  # AgentCore Runtime IAM Role
+  AgentCoreRuntimeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-AgentCoreRuntimeRole-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AgentCoreRuntimePermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: 'arn:aws:logs:*:*:log-group:/aws/bedrock-agentcore/*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource: !Sub 'arn:aws:ssm:*:*:parameter/${AWS::StackName}/*'
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:GetFoundationModel
+                Resource: !Sub 'arn:aws:bedrock:*:*:foundation-model/${BedrockModelId}'
+
+  # API Gateway IAM Role
+  ApiGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-ApiGatewayRole-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt TriggerScanFunction.Arn
+                  - !GetAtt GetAuditRunsFunction.Arn
+                  - !GetAtt GetFindingsFunction.Arn
+
+  # Cognito User Pool
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-UserPool-${Environment}'
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: company
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub '${AWS::StackName}-Client-${Environment}'
+      GenerateSecret: false
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Ref CognitoDomainPrefix
+
+  IdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      IdentityPoolName: !Sub '${AWS::StackName}-IdentityPool-${Environment}'
+      AllowUnauthenticatedIdentities: false
+      CognitoIdentityProviders:
+        - ClientId: !Ref UserPoolClient
+          ProviderName: !GetAtt UserPool.ProviderName
+
+  # IAM Roles for Cognito
+  CognitoAuthenticatedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-CognitoAuthenticatedRole-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'cognito-identity.amazonaws.com:aud': !Ref IdentityPool
+              'ForAnyValue:StringLike':
+                'cognito-identity.amazonaws.com:amr': authenticated
+      Policies:
+        - PolicyName: AuthenticatedUserAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !GetAtt FrontendBucket.Arn
+                  - !Sub '${FrontendBucket.Arn}/*'
+
+  # API Gateway
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${AWS::StackName}-API-${Environment}'
+      Description: API for SecureAuditAI Agent operations
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  ApiGatewayRootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !GetAtt RestApi.RootResourceId
+      HttpMethod: ANY
+      AuthorizationType: AWS_IAM
+
+
+  # Lambda Functions
+  TriggerScanFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-TriggerScan-${Environment}'
+      Runtime: python3.11
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 900
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          AUDIT_RUNS_TABLE: !Ref AuditRunsTable
+          FINDINGS_TABLE: !Ref FindingsTable
+          COMPLIANCE_SNAPSHOTS_TABLE: !Ref ComplianceSnapshotsTable
+          REPORTS_BUCKET: !Ref ReportsBucket
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import uuid
+          import os
+          from datetime import datetime
+
+          def lambda_handler(event, context):
+              # Initialize clients
+              dynamodb = boto3.resource('dynamodb')
+              audit_runs_table = dynamodb.Table(os.environ['AUDIT_RUNS_TABLE'])
+
+              # Create audit run
+              audit_run_id = str(uuid.uuid4())
+              audit_run = {
+                  'AuditRunId': audit_run_id,
+                  'Status': 'PENDING',
+                  'CreatedAt': datetime.utcnow().isoformat(),
+                  'Environment': os.environ['ENVIRONMENT'],
+                  'BedrockModelId': os.environ['BEDROCK_MODEL_ID']
+              }
+
+              audit_runs_table.put_item(Item=audit_run)
+
+              # Invoke AgentCore Runtime (placeholder - will be implemented)
+              # This would trigger the agent runtime via bedrock-agentcore-runtime client
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'auditRunId': audit_run_id,
+                      'status': 'initiated'
+                  })
+              }
+
+  GetAuditRunsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-GetAuditRuns-${Environment}'
+      Runtime: python3.11
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          AUDIT_RUNS_TABLE: !Ref AuditRunsTable
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from boto3.dynamodb.conditions import Key
+
+          def lambda_handler(event, context):
+              dynamodb = boto3.resource('dynamodb')
+              table = dynamodb.Table(os.environ['AUDIT_RUNS_TABLE'])
+
+              # Query audit runs
+              response = table.scan()
+              items = response.get('Items', [])
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'auditRuns': items
+                  })
+              }
+
+  GetFindingsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-GetFindings-${Environment}'
+      Runtime: python3.11
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          FINDINGS_TABLE: !Ref FindingsTable
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from boto3.dynamodb.conditions import Key
+
+          def lambda_handler(event, context):
+              dynamodb = boto3.resource('dynamodb')
+              table = dynamodb.Table(os.environ['FINDINGS_TABLE'])
+
+              # Query findings
+              response = table.scan()
+              items = response.get('Items', [])
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'findings': items
+                  })
+              }
+
+  # API Gateway Resources and Methods
+  AuditRunsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: audit-runs
+
+  AuditRunsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref AuditRunsResource
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref CognitoAuthorizer
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetAuditRunsFunction.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: 200
+
+  FindingsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: findings
+
+  FindingsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref FindingsResource
+      HttpMethod: GET
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref CognitoAuthorizer
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetFindingsFunction.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: 200
+
+  ScanResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: scan
+
+  ScanMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ScanResource
+      HttpMethod: POST
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref CognitoAuthorizer
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TriggerScanFunction.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: 200
+
+  # Cognito Authorizer
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: CognitoAuthorizer
+      Type: COGNITO_USER_POOLS
+      IdentityValidationExpression: method.request.header.Authorization
+      RestApiId: !Ref RestApi
+      ProviderARNs:
+        - !GetAtt UserPool.Arn
+
+  # API Gateway Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - AuditRunsMethod
+      - FindingsMethod
+      - ScanMethod
+    Properties:
+      RestApiId: !Ref RestApi
+      StageName: !Ref Environment
+      StageDescription:
+        Description: !Sub '${Environment} stage for SecureAuditAI API'
+
+  # CloudWatch Log Groups
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-TriggerScan-${Environment}'
+      RetentionInDays: !FindInMap [EnvironmentConfig, !Ref Environment, LogRetentionDays]
+
+  # SSM Parameters for configuration
+  BedrockModelParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${AWS::StackName}/${Environment}/bedrock-model-id'
+      Type: String
+      Value: !Ref BedrockModelId
+
+  ApiGatewayUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${AWS::StackName}/${Environment}/api-gateway-url'
+      Type: String
+      Value: !Sub 'https://${ApiDeployment}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+
+  UserPoolIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${AWS::StackName}/${Environment}/user-pool-id'
+      Type: String
+      Value: !Ref UserPool
+
+  UserPoolClientIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${AWS::StackName}/${Environment}/user-pool-client-id'
+      Type: String
+      Value: !Ref UserPoolClient
+
+  # CloudWatch Dashboard
+  ComplianceDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${AWS::StackName}-ComplianceDashboard-${Environment}'
+      DashboardBody:
+        Fn::Sub: |
+          {
+            "widgets": [
+              {
+                "type": "metric",
+                "x": 0,
+                "y": 0,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "metrics": [
+                    ["AWS/Lambda", "Invocations", "FunctionName", "${AWS::StackName}-TriggerScan-${Environment}"],
+                    [".", "Errors", ".", "."],
+                    [".", "Duration", ".", "."]
+                  ],
+                  "view": "timeSeries",
+                  "stacked": false,
+                  "region": "${AWS::Region}",
+                  "title": "Lambda Function Metrics",
+                  "period": 300
+                }
+              },
+              {
+                "type": "log",
+                "x": 12,
+                "y": 0,
+                "width": 12,
+                "height": 6,
+                "properties": {
+                  "query": "SOURCE '${AWS::StackName}-TriggerScan-${Environment}'\n| fields @timestamp, @message\n| sort @timestamp desc\n| limit 100",
+                  "region": "${AWS::Region}",
+                  "title": "Recent Lambda Logs"
+                }
+              }
+            ]
+          }
+
+  # EventBridge Rule for scheduled scans
+  ScheduledScanRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-ScheduledScan-${Environment}'
+      Description: Scheduled compliance audit scan
+      ScheduleExpression: !FindInMap [EnvironmentConfig, !Ref Environment, ScanSchedule]
+      State: ENABLED
+      Targets:
+        - Id: TriggerScanTarget
+          Arn: !GetAtt TriggerScanFunction.Arn
+          RoleArn: !GetAtt EventBridgeRole.Arn
+
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-EventBridgeRole-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt TriggerScanFunction.Arn
+
+  # Lambda Permission for EventBridge
+  TriggerScanPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TriggerScanFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ScheduledScanRule.Arn
+
+# Outputs
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ApiDeployment}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiGatewayUrl-${Environment}'
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolId-${Environment}'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub '${AWS::StackName}-UserPoolClientId-${Environment}'
+
+  ReportsBucketName:
+    Description: S3 bucket for compliance reports
+    Value: !Ref ReportsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ReportsBucket-${Environment}'
+
+  FrontendBucketName:
+    Description: S3 bucket for frontend assets
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-FrontendBucket-${Environment}'
+
+  AuditRunsTableName:
+    Description: DynamoDB table for audit runs
+    Value: !Ref AuditRunsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-AuditRunsTable-${Environment}'
+
+  FindingsTableName:
+    Description: DynamoDB table for findings
+    Value: !Ref FindingsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-FindingsTable-${Environment}'
+
+  ComplianceSnapshotsTableName:
+    Description: DynamoDB table for compliance snapshots
+    Value: !Ref ComplianceSnapshotsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ComplianceSnapshotsTable-${Environment}'

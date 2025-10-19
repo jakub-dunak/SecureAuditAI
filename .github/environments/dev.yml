@@ -1,0 +1,78 @@
+name: development
+
+# Development environment for SecureAuditAI Agent
+# This environment is used for continuous integration and testing
+
+protection_rules:
+  - type: required_reviewers
+    settings:
+      required_reviewers:
+        number: 1
+        dismiss_stale_reviews: true
+  - type: status_checks
+    settings:
+      strict_required_status_checks:
+        contexts:
+          - "Code Quality & Security"
+          - "Validate Infrastructure"
+
+# Environment-specific variables and secrets
+# These should be configured in GitHub repository settings
+
+# AWS Configuration for Dev Environment
+# - AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+# - AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+# - AWS_REGION: us-east-1
+
+# Bedrock Configuration
+# - BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID }}
+
+# Deployment Configuration
+# - STACK_NAME: secureauditai-agent-dev
+# - ENVIRONMENT: dev
+
+# Frontend Configuration
+# - FRONTEND_BUCKET: secureauditai-frontend-dev
+# - COGNITO_DOMAIN_PREFIX: secureauditai-dev
+
+# Monitoring Configuration
+# - CLOUDWATCH_DASHBOARD: SecureAuditAI-Dev-Dashboard
+# - LOG_RETENTION_DAYS: 7
+
+# Demo Configuration
+# - DEMO_USER_EMAIL: demo@secureauditai.com
+# - DEMO_USER_PASSWORD: TempPass123!
+
+# Environment URL (will be populated by deployment)
+# - API_GATEWAY_URL: https://your-api.execute-api.us-east-1.amazonaws.com/dev
+# - FRONTEND_URL: http://secureauditai-frontend-dev.s3-website-us-east-1.amazonaws.com
+
+# Environment metadata
+description: "Development environment for SecureAuditAI Agent - Used for continuous integration, testing, and feature development"
+
+# Deployment settings
+deployment_branch_policy:
+  protected_branches: false
+  custom_branch_policies: false
+
+# Environment-specific reviewers (optional)
+reviewers:
+  teams: []
+  users: []
+
+# Wait timer for deployment (optional)
+# wait_timer: 0
+
+# Environment secrets (configured in repository settings)
+# Required secrets:
+# - AWS_ACCESS_KEY_ID
+# - AWS_SECRET_ACCESS_KEY
+# - BEDROCK_MODEL_ID (optional, defaults to Claude 3.5 Sonnet)
+
+# Environment variables (auto-populated during deployment)
+# These are set by the GitHub Actions workflow
+# - STACK_NAME
+# - API_GATEWAY_URL
+# - FRONTEND_URL
+# - USER_POOL_ID
+# - USER_POOL_CLIENT_ID
