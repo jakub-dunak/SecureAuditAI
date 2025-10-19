@@ -325,7 +325,22 @@ python -m pytest tests/
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **Creative Commons Attribution-NonCommercial 4.0 International License**.
+
+### For Non-Commercial Use
+- ✅ Educational use and research
+- ✅ Personal projects and learning
+- ✅ Sharing and adaptation for non-commercial purposes
+- ✅ Attribution to original authors required
+
+### For Commercial Use
+- ❌ Commercial software development or services
+- ❌ For-profit business applications
+- ❌ Any use intended for commercial advantage
+
+If you wish to use this software for commercial purposes, please contact the project maintainers for commercial licensing options.
+
+See the [LICENSE](LICENSE) file for the full legal text and terms.
 
 ## 🙏 Acknowledgments
 
