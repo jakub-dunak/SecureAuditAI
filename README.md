@@ -51,11 +51,77 @@ SecureAuditAI Agent is a cutting-edge, serverless cybersecurity compliance audit
 
 ## 📋 Prerequisites
 
+### Core Requirements
 - AWS Account with appropriate permissions
-- Node.js 16+ and npm for frontend development
+- Node.js 18+ and npm for frontend development
 - Python 3.11+ for Lambda functions and AgentCore runtime
-- AWS CLI configured with credentials
 - Docker (for AgentCore runtime containerization)
+
+### GitHub OIDC Authentication Setup
+GitHub Actions uses OIDC to authenticate with AWS (no access keys stored in GitHub):
+
+1. **Create OIDC Identity Provider in AWS IAM**:
+   ```bash
+   aws iam create-open-id-connect-provider \
+     --url https://token.actions.githubusercontent.com \
+     --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1 \
+     --client-id-list sts.amazonaws.com
+   ```
+
+2. **Create IAM Roles for GitHub Actions** (one for each environment):
+   ```bash
+   # Edit oidc-trust-policy.json with your GitHub org/repo details
+   # Replace ${AWS_ACCOUNT_ID}, ${GITHUB_ORG}, and ${REPO_NAME}
+
+   # Dev environment role
+   aws iam create-role \
+     --role-name SecureAuditAI-DeployRole \
+     --assume-role-policy-document file://oidc-trust-policy.json
+
+   # Staging environment role (optional)
+   aws iam create-role \
+     --role-name SecureAuditAI-StagingDeployRole \
+     --assume-role-policy-document file://oidc-trust-policy.json
+
+   # Production environment role (optional)
+   aws iam create-role \
+     --role-name SecureAuditAI-ProdDeployRole \
+     --assume-role-policy-document file://oidc-trust-policy.json
+   ```
+
+3. **Attach deployment permissions policy** to each role:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": [
+           "cloudformation:*",
+           "lambda:*",
+           "apigateway:*",
+           "cognito-idp:*",
+           "cognito-identity:*",
+           "dynamodb:*",
+           "s3:*",
+           "bedrock:*",
+           "ecr:*",
+           "logs:*",
+           "events:*",
+           "iam:GetRole",
+           "iam:PassRole"
+         ],
+         "Resource": "*"
+       }
+     ]
+   }
+   ```
+
+4. **Add AWS Account ID to GitHub Secrets**:
+   - Repository Settings → Secrets and variables → Actions
+   - Add `AWS_ACCOUNT_ID` secret with your AWS account ID
+
+**Note**: No AWS access keys are needed - GitHub Actions will use OIDC to assume the appropriate IAM roles automatically.
 
 ## 🚀 Quick Start
 
