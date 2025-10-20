@@ -164,11 +164,32 @@ jobs:
           LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
 
           # Ensure bucket exists in the correct region
+          echo "🔍 Checking bucket ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}..."
+
+          # First, try to check if bucket exists in the expected region
           if aws s3api head-bucket --bucket "${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }} 2>/dev/null; then
             echo "✅ Bucket ${LAMBDA_BUCKET} exists in region ${{ env.AWS_REGION }}"
           else
-            echo "📦 Creating bucket ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}"
-            aws s3 mb "s3://${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }}
+            echo "📦 Bucket not found in ${{ env.AWS_REGION }}, checking globally..."
+
+            # Check if bucket exists anywhere
+            if aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" >/dev/null 2>&1; then
+              BUCKET_REGION=$(aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" --query 'LocationConstraint' --output text 2>/dev/null || echo "us-east-1")
+
+              # Normalize null to us-east-1
+              if [ "$BUCKET_REGION" = "null" ]; then
+                BUCKET_REGION="us-east-1"
+              fi
+
+              echo "❌ Bucket ${LAMBDA_BUCKET} exists in region ${BUCKET_REGION}, not ${{ env.AWS_REGION }}"
+              echo "This causes PermanentRedirect errors. Please:"
+              echo "1. Delete the bucket from region ${BUCKET_REGION}, or"
+              echo "2. Use a different environment name to create a new bucket"
+              exit 1
+            else
+              echo "📦 Bucket doesn't exist anywhere, creating ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}"
+              aws s3 mb "s3://${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }}
+            fi
           fi
 
           # Upload packages
@@ -481,11 +502,32 @@ jobs:
           LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
 
           # Ensure bucket exists in the correct region
+          echo "🔍 Checking bucket ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}..."
+
+          # First, try to check if bucket exists in the expected region
           if aws s3api head-bucket --bucket "${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }} 2>/dev/null; then
             echo "✅ Bucket ${LAMBDA_BUCKET} exists in region ${{ env.AWS_REGION }}"
           else
-            echo "📦 Creating bucket ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}"
-            aws s3 mb "s3://${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }}
+            echo "📦 Bucket not found in ${{ env.AWS_REGION }}, checking globally..."
+
+            # Check if bucket exists anywhere
+            if aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" >/dev/null 2>&1; then
+              BUCKET_REGION=$(aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" --query 'LocationConstraint' --output text 2>/dev/null || echo "us-east-1")
+
+              # Normalize null to us-east-1
+              if [ "$BUCKET_REGION" = "null" ]; then
+                BUCKET_REGION="us-east-1"
+              fi
+
+              echo "❌ Bucket ${LAMBDA_BUCKET} exists in region ${BUCKET_REGION}, not ${{ env.AWS_REGION }}"
+              echo "This causes PermanentRedirect errors. Please:"
+              echo "1. Delete the bucket from region ${BUCKET_REGION}, or"
+              echo "2. Use a different environment name to create a new bucket"
+              exit 1
+            else
+              echo "📦 Bucket doesn't exist anywhere, creating ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}"
+              aws s3 mb "s3://${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }}
+            fi
           fi
 
           # Upload packages
