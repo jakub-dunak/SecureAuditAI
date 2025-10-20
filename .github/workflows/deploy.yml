@@ -243,12 +243,19 @@ jobs:
           
           FRONTEND_BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' --output text --region ${{ env.AWS_REGION }})
           aws s3 sync build/ s3://${FRONTEND_BUCKET} --delete --region ${{ env.AWS_REGION }}
-
-          # Invalidate CloudFront
-          DISTRIBUTION_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" --region ${{ env.AWS_REGION }}
           
-          echo "✅ Frontend deployed successfully!"
+          echo "✅ Frontend deployed successfully to S3: ${FRONTEND_BUCKET}"
+          
+          # Check if CloudFront distribution exists
+          DISTRIBUTION_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' --output text --region ${{ env.AWS_REGION }} 2>/dev/null || echo "")
+          
+          if [ -n "$DISTRIBUTION_ID" ] && [ "$DISTRIBUTION_ID" != "None" ]; then
+            echo "🔄 Invalidating CloudFront cache..."
+            aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" --region ${{ env.AWS_REGION }}
+            echo "✅ CloudFront cache invalidated"
+          else
+            echo "ℹ️  No CloudFront distribution configured - files served directly from S3"
+          fi
 
   # Deploy to Production (Manual with Approval)
   deploy-prod:
