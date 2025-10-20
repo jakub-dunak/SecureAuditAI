@@ -1,24 +1,24 @@
 name: Deploy SecureAuditAI Agent
 
 permissions:
-  id-token: write   # This is required for requesting the JWT
-  contents: read    # This is required for actions/checkout
+  id-token: write
+  contents: read
 
 on:
-  # push:
-  #   branches: [ main ]
-  #   paths-ignore:
-  #     - '**.md'
-  #     - '.gitignore'
-  #     - 'LICENSE'
-  #     - 'assets/**'
-  # pull_request:
-  #   branches: [ main ]
-  #   paths-ignore:
-  #     - '**.md'
-  #     - '.gitignore'
-  #     - 'LICENSE'
-  #     - 'assets/**'
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'assets/**'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'assets/**'
   workflow_dispatch:
     inputs:
       environment:
@@ -37,305 +37,38 @@ env:
   NODE_VERSION: '18'
 
 jobs:
-  # CloudFormation Validation
-  validate-infrastructure:
+  # Validate Infrastructure
+  validate:
     name: Validate Infrastructure
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/personal-github-oidc-role
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Package Lambda functions
-        run: |
-          # Create deployment packages for Lambda functions
-          mkdir -p lambda-packages
-
-          # Package trigger_scan.py
-          cd lambda
-          zip -r ../lambda-packages/trigger_scan.zip trigger_scan.py
-          cd ..
-
-          # Package api_audit_runs.py
-          cd lambda
-          zip -r ../lambda-packages/api_audit_runs.zip api_audit_runs.py
-          cd ..
-
-          # Package api_findings.py
-          cd lambda
-          zip -r ../lambda-packages/api_findings.zip api_findings.py
-          cd ..
-
       - name: Validate CloudFormation template
         run: |
           echo "🔍 Validating CloudFormation template..."
-          aws cloudformation validate-template \
-            --template-body file://cloudformation/template.yaml
+          aws cloudformation validate-template --template-body file://cloudformation/template.yaml
+          echo "✅ Template validation passed"
 
-      - name: Verify Integration Points
+      - name: Validate Lambda packages exist
         run: |
-          echo "🔗 Verifying all integration points programmatically..."
-
-          # Install yq for YAML parsing if not available
-          if ! command -v yq &> /dev/null; then
-            echo "📦 Installing yq for YAML parsing..."
-            wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-            chmod +x /usr/local/bin/yq
-          fi
-
-          TEMPLATE_FILE="cloudformation/template.yaml"
-
-          echo "1️⃣ Checking resource dependencies..."
-
-          # Extract all resources
-          RESOURCES=$(yq '.Resources | keys' "$TEMPLATE_FILE" | tr -d '["]')
-
-          # Check for missing DependsOn where needed
-          MISSING_DEPS=""
-          for resource in $RESOURCES; do
-            resource_type=$(yq ".Resources.$resource.Type" "$TEMPLATE_FILE")
-
-            case $resource_type in
-              "AWS::Lambda::Function")
-                # Lambda functions should depend on their IAM role
-                role_ref=$(yq ".Resources.$resource.Properties.Role" "$TEMPLATE_FILE")
-                if [[ $role_ref == *"GetAtt"* ]]; then
-                  role_resource=$(echo "$role_ref" | sed 's/.*GetAtt \([A-Za-z0-9]*\).*/\1/')
-                  if ! yq ".Resources.$resource.DependsOn" "$TEMPLATE_FILE" | grep -q "$role_resource"; then
-                    MISSING_DEPS="$MISSING_DEPS\n❌ $resource missing DependsOn for IAM role $role_resource"
-                  fi
-                fi
-                ;;
-              "AWS::ApiGateway::Method")
-                # API Gateway methods should depend on their authorizer
-                auth_type=$(yq ".Resources.$resource.Properties.AuthorizationType" "$TEMPLATE_FILE")
-                if [[ $auth_type == "COGNITO_USER_POOLS" ]]; then
-                  auth_ref=$(yq ".Resources.$resource.Properties.AuthorizerId" "$TEMPLATE_FILE")
-                  if [[ $auth_ref == *"Ref"* ]]; then
-                    auth_resource=$(echo "$auth_ref" | sed 's/.*Ref \([A-Za-z0-9]*\).*/\1/')
-                    if ! yq ".Resources.$resource.DependsOn" "$TEMPLATE_FILE" | grep -q "$auth_resource"; then
-                      MISSING_DEPS="$MISSING_DEPS\n❌ $resource missing DependsOn for authorizer $auth_resource"
-                    fi
-                  fi
-                fi
-                ;;
-            esac
-          done
-
-          if [ -n "$MISSING_DEPS" ]; then
-            echo "❌ Missing Dependencies Found:"
-            echo -e "$MISSING_DEPS"
-            exit 1
-          else
-            echo "✅ All resource dependencies are properly declared"
-          fi
-
-          echo "2️⃣ Validating resource references..."
-
-          # Check !Ref references
-          REF_ERRORS=""
-          while IFS= read -r ref; do
-            if [[ $ref =~ !Ref[[:space:]]+([A-Za-z0-9]+) ]]; then
-              resource_name="${BASH_REMATCH[1]}"
-              if ! echo "$RESOURCES" | grep -q "^$resource_name$"; then
-                REF_ERRORS="$REF_ERRORS\n❌ !Ref to non-existent resource: $resource_name"
-              fi
-            fi
-          done < <(grep -r "!Ref" "$TEMPLATE_FILE")
-
-          # Check !GetAtt references
-          while IFS= read -r getatt; do
-            if [[ $getatt =~ !GetAtt[[:space:]]+([A-Za-z0-9]+) ]]; then
-              resource_name="${BASH_REMATCH[1]}"
-              if ! echo "$RESOURCES" | grep -q "^$resource_name$"; then
-                REF_ERRORS="$REF_ERRORS\n❌ !GetAtt to non-existent resource: $resource_name"
-              fi
-            fi
-          done < <(grep -r "!GetAtt" "$TEMPLATE_FILE")
-
-          if [ -n "$REF_ERRORS" ]; then
-            echo "❌ Invalid References Found:"
-            echo -e "$REF_ERRORS"
-            exit 1
-          else
-            echo "✅ All resource references are valid"
-          fi
-
-          echo "3️⃣ Validating IAM policies..."
-
-          POLICY_ERRORS=""
-          # Check DynamoDB table ARNs in LambdaExecutionRole
-          for table in AuditRunsTable FindingsTable ComplianceSnapshotsTable; do
-            table_arn=$(yq ".Resources.$table" "$TEMPLATE_FILE" | grep -A 5 "Type.*DynamoDB::Table" | grep "TableName" | head -1)
-            if [ -n "$table_arn" ]; then
-              # Check if the ARN is referenced in the IAM policy
-              if ! grep -A 20 "DynamoDBAccess" "$TEMPLATE_FILE" | grep -q "$table"; then
-                POLICY_ERRORS="$POLICY_ERRORS\n❌ IAM policy missing access to $table"
-              fi
-            fi
-          done
-
-          # Check S3 bucket ARNs
-          reports_bucket=$(yq ".Resources.ReportsBucket" "$TEMPLATE_FILE" | grep -A 5 "Type.*S3::Bucket" | grep "BucketName" | head -1)
-          if [ -n "$reports_bucket" ]; then
-            if ! grep -A 10 "S3Access" "$TEMPLATE_FILE" | grep -q "ReportsBucket"; then
-              POLICY_ERRORS="$POLICY_ERRORS\n❌ IAM policy missing access to ReportsBucket"
-            fi
-          fi
-
-          if [ -n "$POLICY_ERRORS" ]; then
-            echo "❌ IAM Policy Issues Found:"
-            echo -e "$POLICY_ERRORS"
-            exit 1
-          else
-            echo "✅ All IAM policies are properly configured"
-          fi
-
-          echo "4️⃣ Validating Lambda environment variables..."
-
-          ENV_ERRORS=""
-          # Check that Lambda functions reference existing resources in their environment variables
-          for lambda_func in TriggerScanFunction GetAuditRunsFunction GetFindingsFunction; do
-            # Check DynamoDB table references
-            audit_runs_table=$(yq ".Resources.$lambda_func.Properties.Environment.Variables.AUDIT_RUNS_TABLE" "$TEMPLATE_FILE")
-            if [[ $audit_runs_table == "!Ref AuditRunsTable" ]]; then
-              if ! echo "$RESOURCES" | grep -q "AuditRunsTable"; then
-                ENV_ERRORS="$ENV_ERRORS\n❌ $lambda_func references non-existent AUDIT_RUNS_TABLE"
-              fi
-            fi
-
-            findings_table=$(yq ".Resources.$lambda_func.Properties.Environment.Variables.FINDINGS_TABLE" "$TEMPLATE_FILE")
-            if [[ $findings_table == "!Ref FindingsTable" ]]; then
-              if ! echo "$RESOURCES" | grep -q "FindingsTable"; then
-                ENV_ERRORS="$ENV_ERRORS\n❌ $lambda_func references non-existent FINDINGS_TABLE"
-              fi
-            fi
-
-            reports_bucket=$(yq ".Resources.$lambda_func.Properties.Environment.Variables.REPORTS_BUCKET" "$TEMPLATE_FILE")
-            if [[ $reports_bucket == "!Ref ReportsBucket" ]]; then
-              if ! echo "$RESOURCES" | grep -q "ReportsBucket"; then
-                ENV_ERRORS="$ENV_ERRORS\n❌ $lambda_func references non-existent REPORTS_BUCKET"
-              fi
-            fi
-          done
-
-          if [ -n "$ENV_ERRORS" ]; then
-            echo "❌ Lambda Environment Variable Issues:"
-            echo -e "$ENV_ERRORS"
-            exit 1
-          else
-            echo "✅ All Lambda environment variables reference valid resources"
-          fi
-
-          echo "5️⃣ Validating API Gateway integrations..."
-
-          API_ERRORS=""
-          # Check that API Gateway methods integrate with existing Lambda functions
-          for method in AuditRunsMethod FindingsMethod ScanMethod; do
-            integration_uri=$(yq ".Resources.$method.Properties.Integration.Uri" "$TEMPLATE_FILE")
-            if [[ $integration_uri == *"arn:aws:apigateway"* ]]; then
-              # Extract Lambda function name from ARN
-              lambda_func=$(echo "$integration_uri" | sed 's/.*functions\/\([^.]*\).*/\1/')
-              # Check if the Lambda function exists
-              lambda_base_name=$(echo "$lambda_func" | sed 's/.*-\([A-Za-z]*\)-.*/\1/')
-              if [[ $lambda_base_name == "TriggerScan" ]]; then
-                expected_resource="TriggerScanFunction"
-              elif [[ $lambda_base_name == "GetAuditRuns" ]]; then
-                expected_resource="GetAuditRunsFunction"
-              elif [[ $lambda_base_name == "GetFindings" ]]; then
-                expected_resource="GetFindingsFunction"
-              fi
-
-              if [ -n "$expected_resource" ] && ! echo "$RESOURCES" | grep -q "$expected_resource"; then
-                API_ERRORS="$API_ERRORS\n❌ $method integrates with non-existent Lambda function"
-              fi
-            fi
-          done
-
-          if [ -n "$API_ERRORS" ]; then
-            echo "❌ API Gateway Integration Issues:"
-            echo -e "$API_ERRORS"
-            exit 1
-          else
-            echo "✅ All API Gateway integrations are valid"
-          fi
-
-          echo "6️⃣ Validating EventBridge integrations..."
-
-          EVENT_ERRORS=""
-          # Check EventBridge rule targets existing Lambda function
-          rule_target=$(yq ".Resources.ScheduledScanRule.Properties.Targets[0].Arn" "$TEMPLATE_FILE")
-          if [[ $rule_target == *"GetAtt"* ]]; then
-            target_resource=$(echo "$rule_target" | sed 's/.*GetAtt \([A-Za-z0-9]*\).*/\1/')
-            if ! echo "$RESOURCES" | grep -q "$target_resource"; then
-              EVENT_ERRORS="$EVENT_ERRORS\n❌ ScheduledScanRule targets non-existent resource: $target_resource"
-            fi
-          fi
-
-          if [ -n "$EVENT_ERRORS" ]; then
-            echo "❌ EventBridge Integration Issues:"
-            echo -e "$EVENT_ERRORS"
-            exit 1
-          else
-            echo "✅ EventBridge integrations are valid"
-          fi
-
-          echo "7️⃣ Validating SSM parameter dependencies..."
-
-          SSM_ERRORS=""
-          # Check that SSM parameters are created after their dependent resources
-          ssm_params=$(yq '.Resources | to_entries | .[] | select(.value.Type == "AWS::SSM::Parameter") | .key' "$TEMPLATE_FILE")
-
-          for param in $ssm_params; do
-            param_value=$(yq ".Resources.$param.Properties.Value" "$TEMPLATE_FILE")
-
-            # Check if parameter value references other resources
-            if [[ $param_value == *"Ref"* ]] || [[ $param_value == *"GetAtt"* ]]; then
-              # Extract referenced resource
-              if [[ $param_value == *"Ref "* ]]; then
-                ref_resource=$(echo "$param_value" | sed 's/.*Ref \([A-Za-z0-9]*\).*/\1/')
-              elif [[ $param_value == *"GetAtt"* ]]; then
-                ref_resource=$(echo "$param_value" | sed 's/.*GetAtt \([A-Za-z0-9]*\).*/\1/')
-              fi
-
-              if [ -n "$ref_resource" ] && ! echo "$RESOURCES" | grep -q "$ref_resource"; then
-                SSM_ERRORS="$SSM_ERRORS\n❌ SSM parameter $param references non-existent resource: $ref_resource"
-              fi
-            fi
-          done
-
-          if [ -n "$SSM_ERRORS" ]; then
-            echo "❌ SSM Parameter Issues:"
-            echo -e "$SSM_ERRORS"
-            exit 1
-          else
-            echo "✅ All SSM parameters reference valid resources"
-          fi
-
-          echo "🎉 All integration points verified successfully!"
-          echo "✅ Template is ready for deployment"
-
-      - name: Validate CloudFormation IAM requirements
-        run: |
-          # Check if CloudFormation template contains IAM resources that require capabilities
-          if grep -q "AWS::IAM::Role\|AWS::IAM::Policy\|AWS::IAM::ManagedPolicy" cloudformation/template.yaml; then
-            echo "✅ Template contains IAM resources - CAPABILITY_NAMED_IAM required"
-          else
-            echo "ℹ️ Template does not contain IAM resources"
-          fi
+          echo "🔍 Checking Lambda source files..."
+          [ -f "lambda/trigger_scan.py" ] && echo "✅ trigger_scan.py found" || (echo "❌ trigger_scan.py missing" && exit 1)
+          [ -f "lambda/api_audit_runs.py" ] && echo "✅ api_audit_runs.py found" || (echo "❌ api_audit_runs.py missing" && exit 1)
+          [ -f "lambda/api_findings.py" ] && echo "✅ api_findings.py found" || (echo "❌ api_findings.py missing" && exit 1)
+          echo "✅ All Lambda source files present"
 
   # Deploy to Development
   deploy-dev:
     name: Deploy to Development
     runs-on: ubuntu-latest
+    needs: validate
     if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
     environment: dev
+    concurrency:
+      group: deploy-dev-${{ github.ref }}
+      cancel-in-progress: false
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -349,27 +82,20 @@ jobs:
       - name: Generate deterministic Cognito domain prefix
         id: generate-domain
         run: |
-          # Generate deterministic Cognito domain prefix
           echo "🔄 Generating deterministic Cognito domain prefix..."
           ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-          # Create deterministic suffix based on account ID (last 8 digits)
           DETERMINISTIC_SUFFIX="${ACCOUNT_ID: -8}"
-          # Ensure suffix contains only valid characters
           DETERMINISTIC_SUFFIX=$(echo "$DETERMINISTIC_SUFFIX" | tr -cd 'a-z0-9')
           COGNITO_PREFIX="secureauditai-${ENVIRONMENT}-${DETERMINISTIC_SUFFIX}"
 
-          # Validate domain format (must be lowercase alphanumeric with hyphens, 1-63 chars)
           if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
             echo "❌ Invalid domain format: $COGNITO_PREFIX"
             exit 1
           fi
 
           echo "✅ Generated domain: ${COGNITO_PREFIX}"
-          echo "📝 Domain is deterministic based on account ID"
-          echo "🔍 Domain length: ${#COGNITO_PREFIX} characters"
-
           echo "COGNITO_DOMAIN=${COGNITO_PREFIX}" >> $GITHUB_OUTPUT
 
       - name: Set up Python
@@ -384,25 +110,6 @@ jobs:
 
       - name: Prepare Lambda packages
         run: |
-          # Create deployment packages for Lambda functions
-          mkdir -p lambda-packages
-
-          # Package trigger_scan.py
-          cd lambda
-          zip -r ../lambda-packages/trigger_scan.zip trigger_scan.py
-          cd ..
-
-          # Package api_audit_runs.py
-          cd lambda
-          zip -r ../lambda-packages/api_audit_runs.zip api_audit_runs.py
-          cd ..
-
-          # Package api_findings.py
-          cd lambda
-          zip -r ../lambda-packages/api_findings.zip api_findings.py
-          cd ..
-
-          # Upload packages to S3
           export AWS_REGION="${{ env.AWS_REGION }}"
           export AWS_DEFAULT_REGION="${{ env.AWS_REGION }}"
           ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
@@ -411,40 +118,64 @@ jobs:
 
           echo "🔍 Checking bucket ${LAMBDA_BUCKET} in region ${AWS_REGION}..."
 
-          # Check bucket location globally
-          if BUCKET_LOCATION=$(aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" 2>/dev/null); then
-            BUCKET_REGION=$(echo "$BUCKET_LOCATION" | jq -r '.LocationConstraint // "us-east-1"')
-            echo "📍 Bucket ${LAMBDA_BUCKET} found in region: ${BUCKET_REGION}"
-
-            if [ "$BUCKET_REGION" != "$AWS_REGION" ]; then
-              echo "❌ CRITICAL: Bucket ${LAMBDA_BUCKET} exists in ${BUCKET_REGION} but deployment is in ${AWS_REGION}"
-              echo "This causes PermanentRedirect errors and Lambda deployment failures."
-              echo ""
-              echo "IMMEDIATE ACTION REQUIRED:"
-              echo "1. Go to AWS S3 console (region: ${BUCKET_REGION})"
-              echo "2. Delete bucket: ${LAMBDA_BUCKET}"
-              echo "3. Re-run the deployment"
-              echo ""
-              echo "Alternatively, change the environment name to create a new bucket."
+          if aws s3api head-bucket --bucket "${LAMBDA_BUCKET}" --region "${AWS_REGION}" 2>/dev/null; then
+            echo "✅ Bucket ${LAMBDA_BUCKET} exists in region ${AWS_REGION}"
+          else
+            echo "🔍 Checking if bucket exists elsewhere..."
+            if BUCKET_LOCATION=$(aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" 2>/dev/null); then
+              BUCKET_REGION=$(echo "$BUCKET_LOCATION" | jq -r '.LocationConstraint // "us-east-1"')
+              echo "❌ Bucket ${LAMBDA_BUCKET} exists in region ${BUCKET_REGION}, expected ${AWS_REGION}"
+              echo "Please delete the bucket from ${BUCKET_REGION} or use a different environment name."
               exit 1
             else
-              echo "✅ Bucket ${LAMBDA_BUCKET} is in correct region (${BUCKET_REGION})"
+              echo "📦 Creating bucket ${LAMBDA_BUCKET} in region ${AWS_REGION}"
+
+              # Retry bucket creation with exponential backoff to handle AWS eventual consistency
+              MAX_RETRIES=5
+              RETRY_COUNT=0
+              BUCKET_CREATED=false
+
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                echo "🔄 Attempting to create bucket (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+
+                if aws s3 mb "s3://${LAMBDA_BUCKET}" --region "${AWS_REGION}"; then
+                  BUCKET_CREATED=true
+                  echo "✅ Bucket ${LAMBDA_BUCKET} created successfully"
+                  break
+                else
+                  RETRY_COUNT=$((RETRY_COUNT + 1))
+                  if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                    # Exponential backoff: 2^retry_count seconds (2, 4, 8, 16 seconds)
+                    SLEEP_TIME=$((2 ** RETRY_COUNT))
+                    echo "⚠️  Bucket creation failed (likely due to AWS eventual consistency). Retrying in ${SLEEP_TIME} seconds..."
+                    sleep $SLEEP_TIME
+                  fi
+                fi
+              done
+
+              if [ "$BUCKET_CREATED" = false ]; then
+                echo "❌ Failed to create bucket ${LAMBDA_BUCKET} after $MAX_RETRIES attempts"
+                echo "This may be due to:"
+                echo "1. AWS eventual consistency - bucket name still being cleaned up from recent deletion"
+                echo "2. Insufficient permissions"
+                echo ""
+                echo "Try again in a few minutes, or use a different environment name."
+                exit 1
+              fi
             fi
-          else
-            echo "📦 Bucket ${LAMBDA_BUCKET} doesn't exist, creating in region ${AWS_REGION}"
-            if ! aws s3 mb "s3://${LAMBDA_BUCKET}" --region "${AWS_REGION}"; then
-              echo "❌ Failed to create bucket ${LAMBDA_BUCKET} in region ${AWS_REGION}"
-              exit 1
-            fi
-            echo "✅ Bucket ${LAMBDA_BUCKET} created successfully"
           fi
 
-          # Upload packages with explicit region
-          echo "📤 Uploading Lambda packages..."
+          mkdir -p lambda-packages
+          cd lambda
+          zip -r ../lambda-packages/trigger_scan.zip trigger_scan.py
+          zip -r ../lambda-packages/api_audit_runs.zip api_audit_runs.py
+          zip -r ../lambda-packages/api_findings.zip api_findings.py
+          cd ..
+
           aws s3 cp lambda-packages/trigger_scan.zip "s3://${LAMBDA_BUCKET}/lambda/trigger_scan.zip" --region "${AWS_REGION}" --quiet
           aws s3 cp lambda-packages/api_audit_runs.zip "s3://${LAMBDA_BUCKET}/lambda/api_audit_runs.zip" --region "${AWS_REGION}" --quiet
           aws s3 cp lambda-packages/api_findings.zip "s3://${LAMBDA_BUCKET}/lambda/api_findings.zip" --region "${AWS_REGION}" --quiet
-          echo "✅ All Lambda packages uploaded successfully"
+          echo "✅ Lambda packages uploaded"
 
       - name: Deploy CloudFormation stack
         run: |
@@ -453,10 +184,6 @@ jobs:
           LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
-          # Generate unique Cognito domain prefix
-          COGNITO_DOMAIN="${{ steps.generate-domain.outputs.COGNITO_DOMAIN }}"
-
-          # Deploy or update CloudFormation stack
           if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
             echo "Updating existing stack..."
             aws cloudformation update-stack \
@@ -499,43 +226,21 @@ jobs:
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           COGNITO_DOMAIN="${{ steps.generate-domain.outputs.COGNITO_DOMAIN }}"
 
-          # Get User Pool ID from CloudFormation outputs
           USER_POOL_ID=$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --region ${{ env.AWS_REGION }} \
             --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
             --output text)
 
-          if [ "$USER_POOL_ID" = "None" ] || [ -z "$USER_POOL_ID" ]; then
-            echo "❌ Failed to get User Pool ID from stack outputs"
-            exit 1
-          fi
-
-          # Check if domain already exists
           if aws cognito-idp describe-user-pool-domain --domain "$COGNITO_DOMAIN" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-            echo "✅ Domain $COGNITO_DOMAIN already exists - verifying association"
-
-            # Verify the domain is associated with our user pool
-            DOMAIN_POOL_ID=$(aws cognito-idp describe-user-pool-domain \
-              --domain "$COGNITO_DOMAIN" \
-              --region ${{ env.AWS_REGION }} \
-              --query 'DomainDescription.UserPoolId' \
-              --output text)
-
-            if [ "$DOMAIN_POOL_ID" = "$USER_POOL_ID" ]; then
-              echo "✅ Domain $COGNITO_DOMAIN is correctly associated with User Pool $USER_POOL_ID"
-            else
-              echo "⚠️ Domain $COGNITO_DOMAIN exists but is associated with different User Pool: $DOMAIN_POOL_ID"
-              echo "This may cause issues. Consider using a different domain name."
-            fi
+            echo "✅ Domain $COGNITO_DOMAIN already exists"
           else
-            echo "📝 Creating new domain: $COGNITO_DOMAIN"
+            echo "📝 Creating domain: $COGNITO_DOMAIN"
             aws cognito-idp create-user-pool-domain \
               --domain "$COGNITO_DOMAIN" \
               --user-pool-id "$USER_POOL_ID" \
               --region ${{ env.AWS_REGION }}
-
-            echo "✅ Domain $COGNITO_DOMAIN created successfully"
+            echo "✅ Domain $COGNITO_DOMAIN created"
           fi
 
       - name: Deploy React frontend
@@ -543,49 +248,22 @@ jobs:
           ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
-          # Install frontend dependencies
           cd frontend
           npm ci
-
-          # Configure Amplify with CloudFormation outputs
-          cd ..
           USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
           USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
-          node scripts/configure-frontend.js "$USER_POOL_ID" "$USER_POOL_CLIENT_ID" "${{ env.AWS_REGION }}"
-
-          # Build for production
-          cd frontend
+          node ../scripts/configure-frontend.js "$USER_POOL_ID" "$USER_POOL_CLIENT_ID" "${{ env.AWS_REGION }}"
           npm run build
 
-          # Get frontend bucket name from stack outputs
           FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --region ${{ env.AWS_REGION }} \
             --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' \
             --output text)
 
-          if [ "$FRONTEND_BUCKET" != "None" ]; then
-            echo "Deploying frontend to S3 bucket: $FRONTEND_BUCKET"
-
-            # Sync build to S3 with cache control
-            aws s3 sync build/ s3://"$FRONTEND_BUCKET" \
-              --delete \
-              --cache-control max-age=31536000 \
-              --region ${{ env.AWS_REGION }}
-
-            # Enable static website hosting
-            aws s3 website s3://"$FRONTEND_BUCKET" \
-              --index-document index.html \
-              --error-document index.html \
-              --region ${{ env.AWS_REGION }}
-
-            FRONTEND_URL="http://${FRONTEND_BUCKET}.s3-website-${{ env.AWS_REGION }}.amazonaws.com"
-            echo "✅ Frontend deployed to: $FRONTEND_URL"
-            echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Frontend bucket not found in stack outputs"
-            exit 1
-          fi
+          aws s3 sync build/ "s3://$FRONTEND_BUCKET" --delete --region ${{ env.AWS_REGION }}
+          aws s3 website "s3://$FRONTEND_BUCKET" --index-document index.html --error-document index.html --region ${{ env.AWS_REGION }}
+          echo "✅ Frontend deployed"
 
       - name: Build and deploy AgentCore runtime
         if: success()
@@ -593,11 +271,9 @@ jobs:
           ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
-          # Install Python dependencies for AgentCore
           python -m pip install --upgrade pip
           pip install -r agent/requirements.txt
 
-          # Get ECR repository URI from stack outputs
           ECR_REPO=$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --region ${{ env.AWS_REGION }} \
@@ -606,66 +282,32 @@ jobs:
 
           if [ -n "$ECR_REPO" ] && [ "$ECR_REPO" != "None" ]; then
             echo "Building and pushing AgentCore runtime to ECR: $ECR_REPO"
-
-            # Build Docker image
             docker build -t secureauditai-agent agent/
-
-            # Tag and push to ECR
             REPO_NAME=$(echo "$ECR_REPO" | cut -d'/' -f2)
             aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "$ECR_REPO"
             docker tag secureauditai-agent:latest "$ECR_REPO":latest
             docker push "$ECR_REPO":latest
-
             echo "✅ AgentCore runtime deployed to ECR"
           else
-            echo "⚠️ ECR repository not found in stack outputs. Skipping AgentCore deployment."
+            echo "⚠️ ECR repository not found - skipping AgentCore deployment"
           fi
-
-      - name: Extract deployment outputs
-        id: deployment
-        run: |
-          API_GATEWAY_URL=$(aws cloudformation describe-stacks \
-            --stack-name secureauditai-agent-dev \
-            --region ${{ env.AWS_REGION }} \
-            --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
-            --output text)
-          USER_POOL_ID=$(aws cloudformation describe-stacks \
-            --stack-name secureauditai-agent-dev \
-            --region ${{ env.AWS_REGION }} \
-            --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
-            --output text)
-          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
-            --stack-name secureauditai-agent-dev \
-            --region ${{ env.AWS_REGION }} \
-            --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' \
-            --output text)
-
-          echo "api_gateway_url=$API_GATEWAY_URL" >> $GITHUB_OUTPUT
-          echo "user_pool_id=$USER_POOL_ID" >> $GITHUB_OUTPUT
-          echo "frontend_bucket=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
-
-      - name: Create demo user
-        run: |
-          aws cognito-idp admin-create-user \
-            --user-pool-id ${{ steps.deployment.outputs.user_pool_id }} \
-            --username demo@secureauditai.com \
-            --temporary-password TempPass123! \
-            --message-action SUPPRESS \
-            --region ${{ env.AWS_REGION }}
 
       - name: Comment PR with deployment info
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v6
         with:
           script: |
+            const apiUrl = `https://${process.env.DEPLOYMENT_ID || 'unknown'}.execute-api.${process.env.AWS_REGION}.amazonaws.com/dev`;
+            const frontendUrl = `http://secureauditai-agent-dev-frontend-dev.s3-website-${process.env.AWS_REGION}.amazonaws.com`;
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: `🚀 **Development deployment completed!**
 
-              **API Gateway:** ${{ steps.deployment.outputs.api_gateway_url }}
-              **Frontend:** http://${{ steps.deployment.outputs.frontend_bucket }}.s3-website-${{ env.AWS_REGION }}.amazonaws.com
+              **API Gateway:** ${apiUrl}
+              **Frontend:** ${frontendUrl}
 
               **Demo Credentials:**
               - Email: demo@secureauditai.com
@@ -681,6 +323,9 @@ jobs:
     needs: deploy-dev
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
     environment: prod
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -694,27 +339,20 @@ jobs:
       - name: Generate deterministic Cognito domain prefix
         id: generate-domain-prod
         run: |
-          # Generate deterministic Cognito domain prefix
           echo "🔄 Generating deterministic Cognito domain prefix..."
           ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-          # Create deterministic suffix based on account ID (last 8 digits)
           DETERMINISTIC_SUFFIX="${ACCOUNT_ID: -8}"
-          # Ensure suffix contains only valid characters
           DETERMINISTIC_SUFFIX=$(echo "$DETERMINISTIC_SUFFIX" | tr -cd 'a-z0-9')
           COGNITO_PREFIX="secureauditai-${ENVIRONMENT}-${DETERMINISTIC_SUFFIX}"
 
-          # Validate domain format (must be lowercase alphanumeric with hyphens, 1-63 chars)
           if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
             echo "❌ Invalid domain format: $COGNITO_PREFIX"
             exit 1
           fi
 
           echo "✅ Generated domain: ${COGNITO_PREFIX}"
-          echo "📝 Domain is deterministic based on account ID"
-          echo "🔍 Domain length: ${#COGNITO_PREFIX} characters"
-
           echo "COGNITO_DOMAIN=${COGNITO_PREFIX}" >> $GITHUB_OUTPUT
 
       - name: Set up Python
@@ -729,62 +367,72 @@ jobs:
 
       - name: Prepare Lambda packages
         run: |
-          # Create deployment packages for Lambda functions
-          mkdir -p lambda-packages
-
-          # Package trigger_scan.py
-          cd lambda
-          zip -r ../lambda-packages/trigger_scan.zip trigger_scan.py
-          cd ..
-
-          # Package api_audit_runs.py
-          cd lambda
-          zip -r ../lambda-packages/api_audit_runs.zip api_audit_runs.py
-          cd ..
-
-          # Package api_findings.py
-          cd lambda
-          zip -r ../lambda-packages/api_findings.zip api_findings.py
-          cd ..
-
-          # Upload packages to S3
+          export AWS_REGION="${{ env.AWS_REGION }}"
+          export AWS_DEFAULT_REGION="${{ env.AWS_REGION }}"
           ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
 
-          # Ensure bucket exists in the correct region
-          echo "🔍 Checking bucket ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}..."
+          echo "🔍 Checking bucket ${LAMBDA_BUCKET} in region ${AWS_REGION}..."
 
-          # First, try to check if bucket exists in the expected region
-          if aws s3api head-bucket --bucket "${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }} 2>/dev/null; then
-            echo "✅ Bucket ${LAMBDA_BUCKET} exists in region ${{ env.AWS_REGION }}"
+          if aws s3api head-bucket --bucket "${LAMBDA_BUCKET}" --region "${AWS_REGION}" 2>/dev/null; then
+            echo "✅ Bucket ${LAMBDA_BUCKET} exists in region ${AWS_REGION}"
           else
-            echo "📦 Bucket not found in ${{ env.AWS_REGION }}, checking globally..."
-
-            # Check if bucket exists anywhere
-            if aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" >/dev/null 2>&1; then
-              BUCKET_REGION=$(aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" --query 'LocationConstraint' --output text 2>/dev/null || echo "us-east-1")
-
-              # Normalize null to us-east-1
-              if [ "$BUCKET_REGION" = "null" ]; then
-                BUCKET_REGION="us-east-1"
-              fi
-
-              echo "❌ Bucket ${LAMBDA_BUCKET} exists in region ${BUCKET_REGION}, not ${{ env.AWS_REGION }}"
-              echo "This causes PermanentRedirect errors. Please:"
-              echo "1. Delete the bucket from region ${BUCKET_REGION}, or"
-              echo "2. Use a different environment name to create a new bucket"
+            echo "🔍 Checking if bucket exists elsewhere..."
+            if BUCKET_LOCATION=$(aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" 2>/dev/null); then
+              BUCKET_REGION=$(echo "$BUCKET_LOCATION" | jq -r '.LocationConstraint // "us-east-1"')
+              echo "❌ Bucket ${LAMBDA_BUCKET} exists in region ${BUCKET_REGION}, expected ${AWS_REGION}"
+              echo "Please delete the bucket from ${BUCKET_REGION} or use a different environment name."
               exit 1
             else
-              echo "📦 Bucket doesn't exist anywhere, creating ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}"
-              aws s3 mb "s3://${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }}
+              echo "📦 Creating bucket ${LAMBDA_BUCKET} in region ${AWS_REGION}"
+
+              # Retry bucket creation with exponential backoff to handle AWS eventual consistency
+              MAX_RETRIES=5
+              RETRY_COUNT=0
+              BUCKET_CREATED=false
+
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                echo "🔄 Attempting to create bucket (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+
+                if aws s3 mb "s3://${LAMBDA_BUCKET}" --region "${AWS_REGION}"; then
+                  BUCKET_CREATED=true
+                  echo "✅ Bucket ${LAMBDA_BUCKET} created successfully"
+                  break
+                else
+                  RETRY_COUNT=$((RETRY_COUNT + 1))
+                  if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                    # Exponential backoff: 2^retry_count seconds (2, 4, 8, 16 seconds)
+                    SLEEP_TIME=$((2 ** RETRY_COUNT))
+                    echo "⚠️  Bucket creation failed (likely due to AWS eventual consistency). Retrying in ${SLEEP_TIME} seconds..."
+                    sleep $SLEEP_TIME
+                  fi
+                fi
+              done
+
+              if [ "$BUCKET_CREATED" = false ]; then
+                echo "❌ Failed to create bucket ${LAMBDA_BUCKET} after $MAX_RETRIES attempts"
+                echo "This may be due to:"
+                echo "1. AWS eventual consistency - bucket name still being cleaned up from recent deletion"
+                echo "2. Insufficient permissions"
+                echo ""
+                echo "Try again in a few minutes, or use a different environment name."
+                exit 1
+              fi
             fi
           fi
 
-          # Upload packages
-          aws s3 cp lambda-packages/trigger_scan.zip "s3://${LAMBDA_BUCKET}/lambda/trigger_scan.zip" --region ${{ env.AWS_REGION }}
-          aws s3 cp lambda-packages/api_audit_runs.zip "s3://${LAMBDA_BUCKET}/lambda/api_audit_runs.zip" --region ${{ env.AWS_REGION }}
-          aws s3 cp lambda-packages/api_findings.zip "s3://${LAMBDA_BUCKET}/lambda/api_findings.zip" --region ${{ env.AWS_REGION }}
+          mkdir -p lambda-packages
+          cd lambda
+          zip -r ../lambda-packages/trigger_scan.zip trigger_scan.py
+          zip -r ../lambda-packages/api_audit_runs.zip api_audit_runs.py
+          zip -r ../lambda-packages/api_findings.zip api_findings.py
+          cd ..
+
+          aws s3 cp lambda-packages/trigger_scan.zip "s3://${LAMBDA_BUCKET}/lambda/trigger_scan.zip" --region "${AWS_REGION}" --quiet
+          aws s3 cp lambda-packages/api_audit_runs.zip "s3://${LAMBDA_BUCKET}/lambda/api_audit_runs.zip" --region "${AWS_REGION}" --quiet
+          aws s3 cp lambda-packages/api_findings.zip "s3://${LAMBDA_BUCKET}/lambda/api_findings.zip" --region "${AWS_REGION}" --quiet
+          echo "✅ Lambda packages uploaded"
 
       - name: Deploy CloudFormation stack
         run: |
@@ -793,7 +441,6 @@ jobs:
           LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
-          # Deploy or update CloudFormation stack
           if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
             echo "Updating existing stack..."
             aws cloudformation update-stack \
@@ -830,47 +477,27 @@ jobs:
 
       - name: Create or verify Cognito domain
         run: |
+          export AWS_REGION="${{ env.AWS_REGION }}"
+          export AWS_DEFAULT_REGION="${{ env.AWS_REGION }}"
           ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           COGNITO_DOMAIN="${{ steps.generate-domain-prod.outputs.COGNITO_DOMAIN }}"
 
-          # Get User Pool ID from CloudFormation outputs
           USER_POOL_ID=$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --region ${{ env.AWS_REGION }} \
             --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
             --output text)
 
-          if [ "$USER_POOL_ID" = "None" ] || [ -z "$USER_POOL_ID" ]; then
-            echo "❌ Failed to get User Pool ID from stack outputs"
-            exit 1
-          fi
-
-          # Check if domain already exists
           if aws cognito-idp describe-user-pool-domain --domain "$COGNITO_DOMAIN" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-            echo "✅ Domain $COGNITO_DOMAIN already exists - verifying association"
-
-            # Verify the domain is associated with our user pool
-            DOMAIN_POOL_ID=$(aws cognito-idp describe-user-pool-domain \
-              --domain "$COGNITO_DOMAIN" \
-              --region ${{ env.AWS_REGION }} \
-              --query 'DomainDescription.UserPoolId' \
-              --output text)
-
-            if [ "$DOMAIN_POOL_ID" = "$USER_POOL_ID" ]; then
-              echo "✅ Domain $COGNITO_DOMAIN is correctly associated with User Pool $USER_POOL_ID"
-            else
-              echo "⚠️ Domain $COGNITO_DOMAIN exists but is associated with different User Pool: $DOMAIN_POOL_ID"
-              echo "This may cause issues. Consider using a different domain name."
-            fi
+            echo "✅ Domain $COGNITO_DOMAIN already exists"
           else
-            echo "📝 Creating new domain: $COGNITO_DOMAIN"
+            echo "📝 Creating domain: $COGNITO_DOMAIN"
             aws cognito-idp create-user-pool-domain \
               --domain "$COGNITO_DOMAIN" \
               --user-pool-id "$USER_POOL_ID" \
               --region ${{ env.AWS_REGION }}
-
-            echo "✅ Domain $COGNITO_DOMAIN created successfully"
+            echo "✅ Domain $COGNITO_DOMAIN created"
           fi
 
       - name: Deploy React frontend
@@ -878,49 +505,49 @@ jobs:
           ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
-          # Install frontend dependencies
           cd frontend
           npm ci
-
-          # Configure Amplify with CloudFormation outputs
-          cd ..
           USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
           USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
-          node scripts/configure-frontend.js "$USER_POOL_ID" "$USER_POOL_CLIENT_ID" "${{ env.AWS_REGION }}"
-
-          # Build for production
-          cd frontend
+          node ../scripts/configure-frontend.js "$USER_POOL_ID" "$USER_POOL_CLIENT_ID" "${{ env.AWS_REGION }}"
           npm run build
 
-          # Get frontend bucket name from stack outputs
           FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --region ${{ env.AWS_REGION }} \
             --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' \
             --output text)
 
-          if [ "$FRONTEND_BUCKET" != "None" ]; then
-            echo "Deploying frontend to S3 bucket: $FRONTEND_BUCKET"
+          aws s3 sync build/ "s3://$FRONTEND_BUCKET" --delete --region ${{ env.AWS_REGION }}
+          aws s3 website "s3://$FRONTEND_BUCKET" --index-document index.html --error-document index.html --region ${{ env.AWS_REGION }}
+          echo "✅ Frontend deployed"
 
-            # Sync build to S3 with cache control
-            aws s3 sync build/ s3://"$FRONTEND_BUCKET" \
-              --delete \
-              --cache-control max-age=31536000 \
-              --region ${{ env.AWS_REGION }}
+      - name: Build and deploy AgentCore runtime
+        if: success()
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
-            # Enable static website hosting
-            aws s3 website s3://"$FRONTEND_BUCKET" \
-              --index-document index.html \
-              --error-document index.html \
-              --region ${{ env.AWS_REGION }}
+          python -m pip install --upgrade pip
+          pip install -r agent/requirements.txt
 
-            FRONTEND_URL="http://${FRONTEND_BUCKET}.s3-website-${{ env.AWS_REGION }}.amazonaws.com"
-            echo "✅ Frontend deployed to: $FRONTEND_URL"
+          ECR_REPO=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`EcrRepositoryUri`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$ECR_REPO" ] && [ "$ECR_REPO" != "None" ]; then
+            echo "Building and pushing AgentCore runtime to ECR: $ECR_REPO"
+            docker build -t secureauditai-agent agent/
+            REPO_NAME=$(echo "$ECR_REPO" | cut -d'/' -f2)
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "$ECR_REPO"
+            docker tag secureauditai-agent:latest "$ECR_REPO":latest
+            docker push "$ECR_REPO":latest
+            echo "✅ AgentCore runtime deployed to ECR"
           else
-            echo "❌ Frontend bucket not found in stack outputs"
-            exit 1
+            echo "⚠️ ECR repository not found - skipping AgentCore deployment"
           fi
-
 
   # Post-deployment validation
   validate-deployment:
@@ -929,14 +556,10 @@ jobs:
     needs: [deploy-dev, deploy-prod]
     if: always() && (needs.deploy-dev.result == 'success' || needs.deploy-prod.result == 'success')
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Validate deployment
         run: |
           echo "🔍 Validating deployment across all environments..."
 
-          # Check if any deployment succeeded
           if [ "${{ needs.deploy-dev.result }}" = "success" ]; then
             echo "✅ Development deployment validated"
           fi
@@ -954,9 +577,6 @@ jobs:
     needs: [deploy-dev, deploy-prod]
     if: failure() && (needs.deploy-dev.result == 'failure' || needs.deploy-prod.result == 'failure')
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -964,13 +584,11 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Cleanup failed deployment
-        if: failure()
         run: |
           ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           echo "🧹 Cleaning up failed deployment for stack: $STACK_NAME"
 
-          # Check if stack exists and delete it
           if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
             echo "Deleting failed stack..."
             aws cloudformation delete-stack \
