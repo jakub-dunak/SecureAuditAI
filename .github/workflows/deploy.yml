@@ -73,8 +73,9 @@ jobs:
           cd ..
 
           # Upload packages to S3
-          STACK_NAME="${{ github.event.inputs.environment == 'dev' && 'secureauditai-agent-dev' || github.event.inputs.environment == 'staging' && 'secureauditai-agent-staging' || 'secureauditai-agent-prod' }}"
-          LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${{ github.event.inputs.environment }}"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
+          LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
 
           # Create bucket if it doesn't exist (will be created by CF, but we need it now)
           aws s3 mb "s3://${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }} || echo "Bucket may already exist"
@@ -88,7 +89,8 @@ jobs:
         id: generate-domain
         run: |
           # Generate a unique domain prefix for Cognito
-          STACK_NAME="${{ github.event.inputs.environment == 'dev' && 'secureauditai-agent-dev' || github.event.inputs.environment == 'staging' && 'secureauditai-agent-staging' || 'secureauditai-agent-prod' }}"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
           # Clean stack name for domain use
           CLEAN_NAME=$(echo "$STACK_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
@@ -122,12 +124,14 @@ jobs:
             fi
 
             # Check if domain is available
-            if aws cognito-idp describe-user-pool-domain --domain "$DOMAIN" 2>/dev/null; then
-              echo "Domain '$DOMAIN' already exists, trying another..."
-            else
+            DOMAIN_CHECK=$(aws cognito-idp describe-user-pool-domain --domain "$DOMAIN" --query 'DomainDescription.Domain' --output text 2>/dev/null || echo "NOT_FOUND")
+
+            if [ "$DOMAIN_CHECK" = "NOT_FOUND" ] || [ "$DOMAIN_CHECK" = "None" ] || [ -z "$DOMAIN_CHECK" ]; then
               echo "Generated unique domain: $DOMAIN"
               echo "COGNITO_DOMAIN=$DOMAIN" >> $GITHUB_OUTPUT
               exit 0
+            else
+              echo "Domain '$DOMAIN' already exists (used by: $DOMAIN_CHECK), trying another..."
             fi
           done
 
@@ -173,7 +177,8 @@ jobs:
 
       - name: Deploy CloudFormation stack
         run: |
-          STACK_NAME="secureauditai-agent-dev"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
           # Generate unique Cognito domain prefix
@@ -216,7 +221,8 @@ jobs:
 
       - name: Deploy React frontend
         run: |
-          STACK_NAME="secureauditai-agent-dev"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
           # Install frontend dependencies
           cd frontend
@@ -265,7 +271,8 @@ jobs:
       - name: Build and deploy AgentCore runtime
         if: success()
         run: |
-          STACK_NAME="secureauditai-agent-dev"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
           # Install Python dependencies for AgentCore
           python -m pip install --upgrade pip
@@ -377,7 +384,8 @@ jobs:
 
       - name: Deploy CloudFormation stack
         run: |
-          STACK_NAME="secureauditai-agent-staging"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'staging' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
           # Generate unique Cognito domain prefix
@@ -420,7 +428,8 @@ jobs:
 
       - name: Deploy React frontend
         run: |
-          STACK_NAME="secureauditai-agent-staging"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'staging' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
           # Install frontend dependencies
           cd frontend
@@ -494,7 +503,8 @@ jobs:
 
       - name: Deploy CloudFormation stack
         run: |
-          STACK_NAME="secureauditai-agent-prod"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
           # Generate unique Cognito domain prefix
@@ -537,7 +547,8 @@ jobs:
 
       - name: Deploy React frontend
         run: |
-          STACK_NAME="secureauditai-agent-prod"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
           # Install frontend dependencies
           cd frontend
@@ -630,7 +641,8 @@ jobs:
       - name: Cleanup failed deployment
         if: failure()
         run: |
-          STACK_NAME="secureauditai-agent-dev"
+          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           echo "🧹 Cleaning up failed deployment for stack: $STACK_NAME"
 
           # Check if stack exists and delete it
