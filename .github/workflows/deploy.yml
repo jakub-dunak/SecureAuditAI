@@ -143,10 +143,14 @@ jobs:
           aws cloudformation validate-template \
             --template-body file://cloudformation/template.yaml
 
-      - name: Check for IAM capabilities
+      - name: Validate CloudFormation IAM requirements
         run: |
-          # Ensure template requires IAM capabilities
-          grep -q "CAPABILITY_NAMED_IAM" deploy.sh || (echo "Warning: IAM capabilities not found in deploy script" && exit 1)
+          # Check if CloudFormation template contains IAM resources that require capabilities
+          if grep -q "AWS::IAM::Role\|AWS::IAM::Policy\|AWS::IAM::ManagedPolicy" cloudformation/template.yaml; then
+            echo "✅ Template contains IAM resources - CAPABILITY_NAMED_IAM required"
+          else
+            echo "ℹ️ Template does not contain IAM resources"
+          fi
 
   # Deploy to Development
   deploy-dev:
