@@ -95,16 +95,25 @@ jobs:
 
           # Create deterministic suffix based on account ID (last 8 digits)
           DETERMINISTIC_SUFFIX="${ACCOUNT_ID: -8}"
+          # Ensure suffix contains only valid characters
+          DETERMINISTIC_SUFFIX=$(echo "$DETERMINISTIC_SUFFIX" | tr -cd 'a-z0-9')
           COGNITO_PREFIX="secureauditai-${ENVIRONMENT}-${DETERMINISTIC_SUFFIX}"
 
-          # Validate domain format and check availability
-          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 3 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
+          # Validate domain format using AWS pattern
+          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
             echo "❌ Invalid domain format: $COGNITO_PREFIX"
             exit 1
           fi
 
-          # Check if domain already exists
-          DOMAIN_CHECK=$(aws cognito-idp describe-user-pool-domain --domain "$COGNITO_PREFIX" --query 'DomainDescription.Domain' --output text 2>/dev/null || echo "AVAILABLE")
+          # Check if domain already exists (retry logic for robustness)
+          DOMAIN_CHECK=""
+          for i in {1..3}; do
+            DOMAIN_CHECK=$(aws cognito-idp describe-user-pool-domain --domain "$COGNITO_PREFIX" --query 'DomainDescription.Domain' --output text 2>/dev/null || echo "AVAILABLE")
+            if [[ "$DOMAIN_CHECK" != "AVAILABLE" ]]; then
+              break
+            fi
+            sleep 2
+          done
 
           if [[ "$DOMAIN_CHECK" != "AVAILABLE" ]] && [[ "$DOMAIN_CHECK" != "None" ]] && [[ -n "$DOMAIN_CHECK" ]]; then
             echo "⚠️ Domain $COGNITO_PREFIX already exists, trying alternative..."
@@ -122,8 +131,15 @@ jobs:
             fi
           fi
 
-          echo "✅ Using domain: ${COGNITO_PREFIX}"
+          echo "✅ Generated domain: ${COGNITO_PREFIX}"
           echo "📝 Domain is deterministic based on account ID"
+          echo "🔍 Domain length: ${#COGNITO_PREFIX} characters"
+
+          # Final validation
+          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$ ]]; then
+            echo "❌ Final domain validation failed: $COGNITO_PREFIX"
+            exit 1
+          fi
 
           echo "COGNITO_DOMAIN=${COGNITO_PREFIX}" >> $GITHUB_OUTPUT
 
@@ -389,16 +405,25 @@ jobs:
 
           # Create deterministic suffix based on account ID (last 8 digits)
           DETERMINISTIC_SUFFIX="${ACCOUNT_ID: -8}"
+          # Ensure suffix contains only valid characters
+          DETERMINISTIC_SUFFIX=$(echo "$DETERMINISTIC_SUFFIX" | tr -cd 'a-z0-9')
           COGNITO_PREFIX="secureauditai-${ENVIRONMENT}-${DETERMINISTIC_SUFFIX}"
 
-          # Validate domain format and check availability
-          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 3 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
+          # Validate domain format using AWS pattern
+          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
             echo "❌ Invalid domain format: $COGNITO_PREFIX"
             exit 1
           fi
 
-          # Check if domain already exists
-          DOMAIN_CHECK=$(aws cognito-idp describe-user-pool-domain --domain "$COGNITO_PREFIX" --query 'DomainDescription.Domain' --output text 2>/dev/null || echo "AVAILABLE")
+          # Check if domain already exists (retry logic for robustness)
+          DOMAIN_CHECK=""
+          for i in {1..3}; do
+            DOMAIN_CHECK=$(aws cognito-idp describe-user-pool-domain --domain "$COGNITO_PREFIX" --query 'DomainDescription.Domain' --output text 2>/dev/null || echo "AVAILABLE")
+            if [[ "$DOMAIN_CHECK" != "AVAILABLE" ]]; then
+              break
+            fi
+            sleep 2
+          done
 
           if [[ "$DOMAIN_CHECK" != "AVAILABLE" ]] && [[ "$DOMAIN_CHECK" != "None" ]] && [[ -n "$DOMAIN_CHECK" ]]; then
             echo "⚠️ Domain $COGNITO_PREFIX already exists, trying alternative..."
@@ -416,8 +441,15 @@ jobs:
             fi
           fi
 
-          echo "✅ Using domain: ${COGNITO_PREFIX}"
+          echo "✅ Generated domain: ${COGNITO_PREFIX}"
           echo "📝 Domain is deterministic based on account ID"
+          echo "🔍 Domain length: ${#COGNITO_PREFIX} characters"
+
+          # Final validation
+          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$ ]]; then
+            echo "❌ Final domain validation failed: $COGNITO_PREFIX"
+            exit 1
+          fi
 
           echo "COGNITO_DOMAIN=${COGNITO_PREFIX}" >> $GITHUB_OUTPUT
 
