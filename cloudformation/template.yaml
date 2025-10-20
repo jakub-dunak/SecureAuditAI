@@ -541,7 +541,8 @@ Resources:
     Properties:
       Name: CognitoAuthorizer
       Type: COGNITO_USER_POOLS
-      IdentityValidationExpression: method.request.header.Authorization
+      IdentitySource: method.request.header.Authorization
+      IdentityValidationExpression: ^Bearer [-0-9A-Za-z\\.]+$
       RestApiId: !Ref RestApi
       ProviderARNs:
         - !GetAtt UserPool.Arn
