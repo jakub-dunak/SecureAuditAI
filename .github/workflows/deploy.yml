@@ -219,8 +219,12 @@ jobs:
         run: |
           cd frontend
           npm ci
+        env:
+          CI: false
 
       - name: Deploy React frontend
+        env:
+          CI: false
         run: |
           ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
