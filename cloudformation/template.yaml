@@ -480,11 +480,11 @@ Resources:
       AuthorizationType: COGNITO_USER_POOLS
       AuthorizerId: !Ref CognitoAuthorizer
       Integration:
-        Type: AWS
+        Type: AWS_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetAuditRunsFunction.Arn}/invocations'
-        IntegrationResponses:
-          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
 
   FindingsResource:
     Type: AWS::ApiGateway::Resource
@@ -503,11 +503,11 @@ Resources:
       AuthorizationType: COGNITO_USER_POOLS
       AuthorizerId: !Ref CognitoAuthorizer
       Integration:
-        Type: AWS
+        Type: AWS_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetFindingsFunction.Arn}/invocations'
-        IntegrationResponses:
-          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
 
   ScanResource:
     Type: AWS::ApiGateway::Resource
@@ -526,11 +526,11 @@ Resources:
       AuthorizationType: COGNITO_USER_POOLS
       AuthorizerId: !Ref CognitoAuthorizer
       Integration:
-        Type: AWS
+        Type: AWS_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TriggerScanFunction.Arn}/invocations'
-        IntegrationResponses:
-          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
 
   # Cognito Authorizer
   CognitoAuthorizer:
