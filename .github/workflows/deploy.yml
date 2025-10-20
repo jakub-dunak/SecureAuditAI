@@ -213,18 +213,26 @@ jobs:
           ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
+          # Get CloudFormation outputs
+          USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+
           cd frontend
 
-          # Configure frontend
-          node ../scripts/configure-frontend.js
+          # Configure frontend with CloudFormation outputs
+          node ../scripts/configure-frontend.js "$USER_POOL_ID" "$USER_POOL_CLIENT_ID" "${{ env.AWS_REGION }}"
 
           # Build and deploy
           npm run build
-          aws s3 sync build/ s3://$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' --output text --region ${{ env.AWS_REGION }}) --delete --region ${{ env.AWS_REGION }}
+          
+          FRONTEND_BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          aws s3 sync build/ s3://${FRONTEND_BUCKET} --delete --region ${{ env.AWS_REGION }}
 
           # Invalidate CloudFront
           DISTRIBUTION_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
           aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" --region ${{ env.AWS_REGION }}
+          
+          echo "✅ Frontend deployed successfully!"
 
   # Deploy to Production (Manual with Approval)
   deploy-prod:
