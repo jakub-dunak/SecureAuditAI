@@ -204,7 +204,7 @@ jobs:
           cd frontend
 
           # Configure frontend
-          node scripts/configure-frontend.js
+          node ../scripts/configure-frontend.js
 
           # Build and deploy
           npm run build
