@@ -128,6 +128,9 @@ jobs:
           zip -r trigger_scan-${ENVIRONMENT}.zip trigger_scan.py
           zip -r api_audit_runs-${ENVIRONMENT}.zip api_audit_runs.py
           zip -r api_findings-${ENVIRONMENT}.zip api_findings.py
+          mv trigger_scan-${ENVIRONMENT}.zip ../..
+          mv api_audit_runs-${ENVIRONMENT}.zip ../..
+          mv api_findings-${ENVIRONMENT}.zip ../..
           cd ..
 
           # Verify files exist
