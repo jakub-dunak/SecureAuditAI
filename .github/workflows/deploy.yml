@@ -125,17 +125,17 @@ jobs:
 
           # Package Lambda functions
           cd lambda
-          zip -r trigger_scan-${ENVIRONMENT}.zip trigger_scan.py
-          zip -r api_audit_runs-${ENVIRONMENT}.zip api_audit_runs.py
-          zip -r api_findings-${ENVIRONMENT}.zip api_findings.py
+          zip -r trigger_scan.zip trigger_scan.py
+          zip -r api_audit_runs.zip api_audit_runs.py
+          zip -r api_findings.zip api_findings.py
 
           # Verify files exist in lambda directory
-          ls -la *-*.zip
+          ls -la *.zip
 
           # Upload Lambda packages to S3 from lambda directory
-          aws s3 cp trigger_scan-${ENVIRONMENT}.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/trigger_scan-${ENVIRONMENT}.zip --region us-west-2
-          aws s3 cp api_audit_runs-${ENVIRONMENT}.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_audit_runs-${ENVIRONMENT}.zip --region us-west-2
-          aws s3 cp api_findings-${ENVIRONMENT}.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_findings-${ENVIRONMENT}.zip --region us-west-2
+          aws s3 cp trigger_scan.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/trigger_scan.zip --region us-west-2
+          aws s3 cp api_audit_runs.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_audit_runs.zip --region us-west-2
+          aws s3 cp api_findings.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_findings.zip --region us-west-2
 
           cd ..
 
