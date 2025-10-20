@@ -149,7 +149,9 @@ jobs:
 
           if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
             echo "Updating existing stack..."
-            aws cloudformation update-stack \
+            
+            # Try to update the stack, ignore "No updates" error
+            UPDATE_OUTPUT=$(aws cloudformation update-stack \
               --stack-name "$STACK_NAME" \
               --template-body file://packaged-template.yaml \
               --parameters \
@@ -157,11 +159,20 @@ jobs:
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
                 ParameterKey=LambdaCodeBucketName,ParameterValue="${{ env.DEPLOYMENT_BUCKET }}" \
               --capabilities CAPABILITY_NAMED_IAM \
-              --region ${{ env.AWS_REGION }}
+              --region ${{ env.AWS_REGION }} 2>&1) || true
 
-            aws cloudformation wait stack-update-complete \
-              --stack-name "$STACK_NAME" \
-              --region ${{ env.AWS_REGION }}
+            if echo "$UPDATE_OUTPUT" | grep -q "No updates are to be performed"; then
+              echo "✅ No updates needed - stack is already up to date"
+            elif echo "$UPDATE_OUTPUT" | grep -q "StackId"; then
+              echo "✅ Stack update initiated"
+              aws cloudformation wait stack-update-complete \
+                --stack-name "$STACK_NAME" \
+                --region ${{ env.AWS_REGION }}
+              echo "✅ Stack update completed"
+            else
+              echo "❌ Stack update failed: $UPDATE_OUTPUT"
+              exit 1
+            fi
           else
             echo "Creating new stack..."
             aws cloudformation create-stack \
@@ -177,6 +188,7 @@ jobs:
             aws cloudformation wait stack-create-complete \
               --stack-name "$STACK_NAME" \
               --region ${{ env.AWS_REGION }}
+            echo "✅ Stack creation completed"
           fi
 
       - name: Create Cognito domain
