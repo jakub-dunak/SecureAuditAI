@@ -405,15 +405,6 @@ Resources:
         Types:
           - REGIONAL
 
-  ApiGatewayRootMethod:
-    Type: AWS::ApiGateway::Method
-    Properties:
-      RestApiId: !Ref RestApi
-      ResourceId: !GetAtt RestApi.RootResourceId
-      HttpMethod: ANY
-      AuthorizationType: AWS_IAM
-
-
   # Lambda Functions
   TriggerScanFunction:
     Type: AWS::Lambda::Function
