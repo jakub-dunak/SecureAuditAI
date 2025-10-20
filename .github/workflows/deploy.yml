@@ -198,6 +198,7 @@ jobs:
                 ParameterKey=Environment,ParameterValue=dev \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
                 ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
+                ParameterKey=LambdaCodeBucketName,ParameterValue="$LAMBDA_BUCKET" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -213,6 +214,7 @@ jobs:
                 ParameterKey=Environment,ParameterValue=dev \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
                 ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
+                ParameterKey=LambdaCodeBucketName,ParameterValue="$LAMBDA_BUCKET" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -405,6 +407,7 @@ jobs:
                 ParameterKey=Environment,ParameterValue=staging \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
                 ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
+                ParameterKey=LambdaCodeBucketName,ParameterValue="$LAMBDA_BUCKET" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -420,6 +423,7 @@ jobs:
                 ParameterKey=Environment,ParameterValue=staging \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
                 ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
+                ParameterKey=LambdaCodeBucketName,ParameterValue="$LAMBDA_BUCKET" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -524,6 +528,7 @@ jobs:
                 ParameterKey=Environment,ParameterValue=prod \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
                 ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
+                ParameterKey=LambdaCodeBucketName,ParameterValue="$LAMBDA_BUCKET" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -539,6 +544,7 @@ jobs:
                 ParameterKey=Environment,ParameterValue=prod \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
                 ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
+                ParameterKey=LambdaCodeBucketName,ParameterValue="$LAMBDA_BUCKET" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 

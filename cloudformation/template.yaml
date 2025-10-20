@@ -21,6 +21,10 @@ Parameters:
     Type: String
     Description: Unique domain prefix for Cognito (provided by deployment workflow)
 
+  LambdaCodeBucketName:
+    Type: String
+    Description: Name of the S3 bucket containing Lambda function code (created by deployment workflow)
+
 # Mappings for configuration
 Mappings:
   EnvironmentConfig:
@@ -56,17 +60,6 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
-  LambdaCodeBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub '${AWS::StackName}-lambda-code-${Environment}'
-      VersioningConfiguration:
-        Status: Enabled
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
 
   FrontendBucket:
     Type: AWS::S3::Bucket
@@ -446,7 +439,7 @@ Resources:
           COMPLIANCE_SNAPSHOTS_TABLE: !Ref ComplianceSnapshotsTable
           REPORTS_BUCKET: !Ref ReportsBucket
       Code:
-        S3Bucket: !Ref LambdaCodeBucket
+        S3Bucket: !Ref LambdaCodeBucketName
         S3Key: !Sub 'lambda/trigger_scan.zip'
 
   GetAuditRunsFunction:
@@ -462,7 +455,7 @@ Resources:
         Variables:
           AUDIT_RUNS_TABLE: !Ref AuditRunsTable
       Code:
-        S3Bucket: !Ref LambdaCodeBucket
+        S3Bucket: !Ref LambdaCodeBucketName
         S3Key: !Sub 'lambda/api_audit_runs.zip'
 
   GetFindingsFunction:
@@ -478,7 +471,7 @@ Resources:
         Variables:
           FINDINGS_TABLE: !Ref FindingsTable
       Code:
-        S3Bucket: !Ref LambdaCodeBucket
+        S3Bucket: !Ref LambdaCodeBucketName
         S3Key: !Sub 'lambda/api_findings.zip'
 
   # API Gateway Resources and Methods
