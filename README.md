@@ -173,7 +173,7 @@ cd agent
 pip install -r requirements.txt
 
 # Build and push Docker image to ECR (created by CloudFormation)
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <ECR_REPO_URI>
+aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin <ECR_REPO_URI>
 docker build -t secureauditai-agent .
 docker tag secureauditai-agent:latest <ECR_REPO_URI>:latest
 docker push <ECR_REPO_URI>:latest

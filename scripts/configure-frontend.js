@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const [,, userPoolId, userPoolClientId, region = 'us-east-1'] = process.argv;
+const [,, userPoolId, userPoolClientId, region = 'us-west-2'] = process.argv;
 
 if (!userPoolId || !userPoolClientId) {
   console.error('Usage: node scripts/configure-frontend.js <user-pool-id> <user-pool-client-id> [region]');

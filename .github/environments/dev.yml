@@ -22,7 +22,7 @@ protection_rules:
 # AWS Configuration for Dev Environment
 # - AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
 # - AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-# - AWS_REGION: us-east-1
+# - AWS_REGION: us-west-2
 
 # Bedrock Configuration
 # - BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID }}
@@ -44,8 +44,8 @@ protection_rules:
 # - DEMO_USER_PASSWORD: TempPass123!
 
 # Environment URL (will be populated by deployment)
-# - API_GATEWAY_URL: https://your-api.execute-api.us-east-1.amazonaws.com/dev
-# - FRONTEND_URL: http://secureauditai-frontend-dev.s3-website-us-east-1.amazonaws.com
+# - API_GATEWAY_URL: https://your-api.execute-api.us-west-2.amazonaws.com/dev
+# - FRONTEND_URL: http://secureauditai-frontend-dev.s3-website-us-west-2.amazonaws.com
 
 # Environment metadata
 description: "Development environment for SecureAuditAI Agent - Used for continuous integration, testing, and feature development"

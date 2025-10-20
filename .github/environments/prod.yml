@@ -34,7 +34,7 @@ protection_rules:
 # AWS Configuration for Production Environment
 # - AWS_ACCESS_KEY_ID_PROD: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
 # - AWS_SECRET_ACCESS_KEY_PROD: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
-# - AWS_REGION: us-east-1
+# - AWS_REGION: us-west-2
 
 # Bedrock Configuration
 # - BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID }}
@@ -57,8 +57,8 @@ protection_rules:
 # - ALERTS_ENABLED: true
 
 # Environment URL (will be populated by deployment)
-# - API_GATEWAY_URL: https://your-api.execute-api.us-east-1.amazonaws.com/prod
-# - FRONTEND_URL: http://secureauditai-frontend-prod.s3-website-us-east-1.amazonaws.com
+# - API_GATEWAY_URL: https://your-api.execute-api.us-west-2.amazonaws.com/prod
+# - FRONTEND_URL: http://secureauditai-frontend-prod.s3-website-us-west-2.amazonaws.com
 
 # Environment metadata
 description: "Production environment for SecureAuditAI Agent - Requires manual approval and has strict security controls"

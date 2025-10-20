@@ -5,8 +5,8 @@
 const hasValidCognitoConfig = process.env.REACT_APP_USER_POOL_ID && process.env.REACT_APP_USER_POOL_CLIENT_ID;
 
 const awsmobile = hasValidCognitoConfig ? {
-  "aws_project_region": process.env.REACT_APP_AWS_REGION || "us-east-1",
-  "aws_cognito_region": process.env.REACT_APP_AWS_REGION || "us-east-1",
+  "aws_project_region": process.env.REACT_APP_AWS_REGION || "us-west-2",
+  "aws_cognito_region": process.env.REACT_APP_AWS_REGION || "us-west-2",
   "aws_user_pools_id": process.env.REACT_APP_USER_POOL_ID,
   "aws_user_pools_web_client_id": process.env.REACT_APP_USER_POOL_CLIENT_ID,
   "oauth": {},
@@ -26,12 +26,12 @@ const awsmobile = hasValidCognitoConfig ? {
   },
   "aws_cognito_verification_mechanisms": ["EMAIL"],
   "aws_appsync_graphqlEndpoint": "",
-  "aws_appsync_region": process.env.REACT_APP_AWS_REGION || "us-east-1",
+  "aws_appsync_region": process.env.REACT_APP_AWS_REGION || "us-west-2",
   "aws_appsync_authenticationType": "AMAZON_COGNITO_USER_POOLS"
 } : {
   // Minimal config for local development without Cognito
-  "aws_project_region": "us-east-1",
-  "aws_appsync_region": "us-east-1"
+  "aws_project_region": "us-west-2",
+  "aws_appsync_region": "us-west-2"
 };
 
 export default awsmobile;

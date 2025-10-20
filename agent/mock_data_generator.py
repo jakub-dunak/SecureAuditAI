@@ -13,7 +13,7 @@ class MockResourceGenerator:
     """Generates mock AWS resource data for compliance testing"""
 
     def __init__(self):
-        self.regions = ['us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1']
+        self.regions = ['us-west-2', 'us-west-2', 'eu-west-1', 'ap-southeast-1']
         self.environments = ['dev', 'staging', 'prod']
 
     async def generate_mock_resources(self, scan_config: Dict) -> List[Dict]:
@@ -212,7 +212,7 @@ class MockResourceGenerator:
             function = {
                 'type': 'LAMBDA_FUNCTION',
                 'id': function_name,
-                'arn': f'arn:aws:lambda:us-east-1:123456789012:function:{function_name}',
+                'arn': f'arn:aws:lambda:us-west-2:123456789012:function:{function_name}',
                 'runtime': random.choice(['python3.9', 'python3.8', 'nodejs14.x', 'java11']),
                 'handler': f'{function_name}.lambda_handler',
                 'timeout': random.randint(30, 900),
@@ -288,7 +288,7 @@ class MockResourceGenerator:
             'type': 'CLOUDTRAIL_TRAIL',
             'id': 'main-trail',
             'name': 'main-trail',
-            'region': 'us-east-1',  # CloudTrail is global but configured per region
+            'region': 'us-west-2',  # CloudTrail is global but configured per region
             'createdAt': (datetime.utcnow() - timedelta(days=random.randint(180, 365))).isoformat(),
             'config': {
                 'isMultiRegion': True,

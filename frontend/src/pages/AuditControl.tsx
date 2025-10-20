@@ -45,7 +45,7 @@ const AuditControl: React.FC = () => {
   const [scanConfig, setScanConfig] = useState<ScanConfiguration>({
     complianceFrameworks: ['GDPR', 'SOC2', 'PCI-DSS'],
     resourceTypes: ['S3', 'EC2', 'IAM', 'Lambda', 'RDS'],
-    regions: ['us-east-1', 'us-west-2'],
+    regions: ['us-west-2', 'us-west-2'],
     includeTags: true,
     scheduleEnabled: true,
     scheduleFrequency: '24 hours'
@@ -161,7 +161,7 @@ const AuditControl: React.FC = () => {
                 AWS Regions
               </label>
               <div className="flex flex-wrap gap-2">
-                {['us-east-1', 'us-west-2', 'eu-west-1', 'ap-southeast-1'].map((region) => (
+                {['us-west-2', 'us-west-2', 'eu-west-1', 'ap-southeast-1'].map((region) => (
                   <button
                     key={region}
                     className={`px-3 py-1 text-sm rounded-full border ${
