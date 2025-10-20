@@ -183,6 +183,7 @@ jobs:
         run: |
           ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
+          LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
           # Generate unique Cognito domain prefix
@@ -195,7 +196,7 @@ jobs:
               --stack-name "$STACK_NAME" \
               --template-body file://cloudformation/template.yaml \
               --parameters \
-                ParameterKey=Environment,ParameterValue=dev \
+                ParameterKey=Environment,ParameterValue="$ENVIRONMENT" \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
                 ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
                 ParameterKey=LambdaCodeBucketName,ParameterValue="$LAMBDA_BUCKET" \
@@ -211,7 +212,7 @@ jobs:
               --stack-name "$STACK_NAME" \
               --template-body file://cloudformation/template.yaml \
               --parameters \
-                ParameterKey=Environment,ParameterValue=dev \
+                ParameterKey=Environment,ParameterValue="$ENVIRONMENT" \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
                 ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
                 ParameterKey=LambdaCodeBucketName,ParameterValue="$LAMBDA_BUCKET" \
@@ -392,6 +393,7 @@ jobs:
         run: |
           ENVIRONMENT="${{ github.event.inputs.environment || 'staging' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
+          LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
           # Generate unique Cognito domain prefix
@@ -513,6 +515,7 @@ jobs:
         run: |
           ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
+          LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
           # Generate unique Cognito domain prefix
