@@ -32,6 +32,7 @@ on:
 
 env:
   AWS_REGION: us-west-2
+  AWS_DEFAULT_REGION: us-west-2
   PYTHON_VERSION: '3.11'
   NODE_VERSION: '18'
 
@@ -76,13 +77,18 @@ jobs:
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
 
-          # Create bucket if it doesn't exist (will be created by CF, but we need it now)
-          aws s3 mb "s3://${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }} || echo "Bucket may already exist"
+          # Ensure bucket exists in the correct region
+          if aws s3api head-bucket --bucket "${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "✅ Bucket ${LAMBDA_BUCKET} exists in region ${{ env.AWS_REGION }}"
+          else
+            echo "📦 Creating bucket ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}"
+            aws s3 mb "s3://${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }}
+          fi
 
           # Upload packages
-          aws s3 cp lambda-packages/trigger_scan.zip "s3://${LAMBDA_BUCKET}/lambda/trigger_scan.zip"
-          aws s3 cp lambda-packages/api_audit_runs.zip "s3://${LAMBDA_BUCKET}/lambda/api_audit_runs.zip"
-          aws s3 cp lambda-packages/api_findings.zip "s3://${LAMBDA_BUCKET}/lambda/api_findings.zip"
+          aws s3 cp lambda-packages/trigger_scan.zip "s3://${LAMBDA_BUCKET}/lambda/trigger_scan.zip" --region ${{ env.AWS_REGION }}
+          aws s3 cp lambda-packages/api_audit_runs.zip "s3://${LAMBDA_BUCKET}/lambda/api_audit_runs.zip" --region ${{ env.AWS_REGION }}
+          aws s3 cp lambda-packages/api_findings.zip "s3://${LAMBDA_BUCKET}/lambda/api_findings.zip" --region ${{ env.AWS_REGION }}
 
       - name: Validate CloudFormation template
         run: |
