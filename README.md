@@ -68,28 +68,17 @@ GitHub Actions uses OIDC to authenticate with AWS (no access keys stored in GitH
      --client-id-list sts.amazonaws.com
    ```
 
-2. **Create IAM Roles for GitHub Actions** (one for each environment):
+2. **Create IAM Role for GitHub Actions**:
    ```bash
    # Edit oidc-trust-policy.json with your GitHub org/repo details
    # Replace ${AWS_ACCOUNT_ID}, ${GITHUB_ORG}, and ${REPO_NAME}
 
-   # Dev environment role
    aws iam create-role \
-     --role-name SecureAuditAI-DeployRole \
-     --assume-role-policy-document file://oidc-trust-policy.json
-
-   # Staging environment role (optional)
-   aws iam create-role \
-     --role-name SecureAuditAI-StagingDeployRole \
-     --assume-role-policy-document file://oidc-trust-policy.json
-
-   # Production environment role (optional)
-   aws iam create-role \
-     --role-name SecureAuditAI-ProdDeployRole \
+     --role-name personal-github-oidc-role \
      --assume-role-policy-document file://oidc-trust-policy.json
    ```
 
-3. **Attach deployment permissions policy** to each role:
+3. **Attach deployment permissions policy** to the role:
    ```json
    {
      "Version": "2012-10-17",
@@ -123,23 +112,48 @@ GitHub Actions uses OIDC to authenticate with AWS (no access keys stored in GitH
 
 **Note**: No AWS access keys are needed - GitHub Actions will use OIDC to assume the appropriate IAM roles automatically.
 
+### Automated Lambda Packaging
+Lambda functions are automatically packaged and deployed:
+
+- **Separate Lambda folder** (`lambda/`) contains all function code
+- **Automatic packaging** during GitHub Actions deployment
+- **S3-based deployment** packages uploaded to dedicated S3 bucket
+- **Full CRUD APIs** for audit runs and findings management
+
+### Cognito Domain Auto-Generation
+The GitHub Actions workflow automatically generates unique Cognito domain prefixes:
+
+- **No manual domain selection required** - domains are generated and validated automatically during deployment
+- **Reuses existing domains** for the same stack/environment to avoid conflicts
+- **Globally unique validation** ensures no domain conflicts
+- **Format**: `{cleaned-stack-name}-{random-suffix}` (e.g., `secureauditai-agent-dev-a1b2`)
+- **Retry logic** attempts up to 5 times to find an available domain
+
 ## 🚀 Quick Start
 
 ### 1. Deploy Infrastructure
 
 ```bash
-# Deploy the CloudFormation stack
+# Deploy using GitHub Actions workflow (recommended)
+The deployment workflow will automatically generate a unique Cognito domain prefix.
+
+For manual deployment (not recommended), you would need to provide a unique domain:
+
+```bash
+# Manual deployment (domain must be pre-validated as unique)
 aws cloudformation create-stack \
   --stack-name secureauditai-agent \
   --template-body file://cloudformation/template.yaml \
   --parameters \
     ParameterKey=Environment,ParameterValue=dev \
     ParameterKey=BedrockModelId,ParameterValue=anthropic.claude-3-5-sonnet-20241022-v2:0 \
-    ParameterKey=CognitoDomainPrefix,ParameterValue=your-unique-prefix
+    ParameterKey=CognitoDomainPrefix,ParameterValue="your-validated-unique-domain"
 
 # Wait for stack creation to complete
 aws cloudformation wait stack-create-complete --stack-name secureauditai-agent
 ```
+
+**Note**: The recommended approach is to use the GitHub Actions workflow, which automatically generates and validates unique domain prefixes.
 
 ### 2. Set Up Frontend
 

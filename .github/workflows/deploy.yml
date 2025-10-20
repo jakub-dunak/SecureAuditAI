@@ -109,13 +109,95 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/SecureAuditAI-DeployRole
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/personal-github-oidc-role
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Package Lambda functions
+        run: |
+          # Create deployment packages for Lambda functions
+          mkdir -p lambda-packages
+
+          # Package trigger_scan.py
+          cd lambda
+          zip -r ../lambda-packages/trigger_scan.zip trigger_scan.py
+          cd ..
+
+          # Package api_audit_runs.py
+          cd lambda
+          zip -r ../lambda-packages/api_audit_runs.zip api_audit_runs.py
+          cd ..
+
+          # Package api_findings.py
+          cd lambda
+          zip -r ../lambda-packages/api_findings.zip api_findings.py
+          cd ..
+
+          # Upload packages to S3
+          STACK_NAME="${{ github.event.inputs.environment == 'dev' && 'secureauditai-agent-dev' || github.event.inputs.environment == 'staging' && 'secureauditai-agent-staging' || 'secureauditai-agent-prod' }}"
+          LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${{ github.event.inputs.environment }}"
+
+          # Create bucket if it doesn't exist (will be created by CF, but we need it now)
+          aws s3 mb "s3://${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }} || echo "Bucket may already exist"
+
+          # Upload packages
+          aws s3 cp lambda-packages/trigger_scan.zip "s3://${LAMBDA_BUCKET}/lambda/trigger_scan.zip"
+          aws s3 cp lambda-packages/api_audit_runs.zip "s3://${LAMBDA_BUCKET}/lambda/api_audit_runs.zip"
+          aws s3 cp lambda-packages/api_findings.zip "s3://${LAMBDA_BUCKET}/lambda/api_findings.zip"
+
+      - name: Generate unique Cognito domain prefix
+        id: generate-domain
+        run: |
+          # Generate a unique domain prefix for Cognito
+          STACK_NAME="${{ github.event.inputs.environment == 'dev' && 'secureauditai-agent-dev' || github.event.inputs.environment == 'staging' && 'secureauditai-agent-staging' || 'secureauditai-agent-prod' }}"
+
+          # Clean stack name for domain use
+          CLEAN_NAME=$(echo "$STACK_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+
+          # Check if domain already exists for this stack
+          EXISTING_DOMAIN=$(aws cognito-idp list-user-pools --max-results 60 --query "UserPools[?contains(Name, '$STACK_NAME')].Id" --output text 2>/dev/null | head -1)
+
+          if [ ! -z "$EXISTING_DOMAIN" ]; then
+            # Try to find existing domain for this user pool
+            DOMAIN_INFO=$(aws cognito-idp describe-user-pool --user-pool-id "$EXISTING_DOMAIN" --query "UserPool.Domain" --output text 2>/dev/null)
+            if [ ! -z "$DOMAIN_INFO" ] && [ "$DOMAIN_INFO" != "None" ]; then
+              echo "Using existing domain: $DOMAIN_INFO"
+              echo "COGNITO_DOMAIN=$DOMAIN_INFO" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+
+          # Generate new unique domain with retry logic
+          MAX_ATTEMPTS=5
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            # Generate random 4-character suffix
+            SUFFIX=$(openssl rand -hex 2 | cut -c1-4)
+            DOMAIN="${CLEAN_NAME}-${SUFFIX}"
+
+            # Ensure domain meets length requirements
+            if [ ${#DOMAIN} -lt 3 ]; then
+              DOMAIN="sec-${DOMAIN}"
+            fi
+            if [ ${#DOMAIN} -gt 63 ]; then
+              DOMAIN="${DOMAIN:0:59}-${SUFFIX}"
+            fi
+
+            # Check if domain is available
+            if aws cognito-idp describe-user-pool-domain --domain "$DOMAIN" 2>/dev/null; then
+              echo "Domain '$DOMAIN' already exists, trying another..."
+            else
+              echo "Generated unique domain: $DOMAIN"
+              echo "COGNITO_DOMAIN=$DOMAIN" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          done
+
+          echo "Failed to generate unique domain after $MAX_ATTEMPTS attempts"
+          exit 1
 
       - name: Validate CloudFormation template
         run: |
           aws cloudformation validate-template \
-            --template-body file://template.yaml
+            --template-body file://cloudformation/template.yaml
 
       - name: Check for IAM capabilities
         run: |
@@ -136,7 +218,7 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/SecureAuditAI-DeployRole
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/personal-github-oidc-role
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Set up Python
@@ -155,7 +237,7 @@ jobs:
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
           # Generate unique Cognito domain prefix
-          COGNITO_PREFIX="secureauditai-$(openssl rand -hex 4)"
+          COGNITO_DOMAIN="${{ steps.generate-domain.outputs.COGNITO_DOMAIN }}"
 
           # Deploy or update CloudFormation stack
           if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
@@ -166,7 +248,7 @@ jobs:
               --parameters \
                 ParameterKey=Environment,ParameterValue=dev \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
-                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_PREFIX" \
+                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -181,7 +263,7 @@ jobs:
               --parameters \
                 ParameterKey=Environment,ParameterValue=dev \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
-                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_PREFIX" \
+                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -340,7 +422,7 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/SecureAuditAI-StagingDeployRole
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/personal-github-oidc-role
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Set up Python
@@ -359,7 +441,7 @@ jobs:
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
           # Generate unique Cognito domain prefix
-          COGNITO_PREFIX="secureauditai-staging-$(openssl rand -hex 4)"
+          COGNITO_DOMAIN="${{ steps.generate-domain.outputs.COGNITO_DOMAIN }}"
 
           # Deploy or update CloudFormation stack
           if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
@@ -370,7 +452,7 @@ jobs:
               --parameters \
                 ParameterKey=Environment,ParameterValue=staging \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
-                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_PREFIX" \
+                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -385,7 +467,7 @@ jobs:
               --parameters \
                 ParameterKey=Environment,ParameterValue=staging \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
-                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_PREFIX" \
+                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -457,7 +539,7 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/SecureAuditAI-ProdDeployRole
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/personal-github-oidc-role
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Set up Python
@@ -476,7 +558,7 @@ jobs:
           BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
           # Generate unique Cognito domain prefix
-          COGNITO_PREFIX="secureauditai-prod-$(openssl rand -hex 4)"
+          COGNITO_DOMAIN="${{ steps.generate-domain.outputs.COGNITO_DOMAIN }}"
 
           # Deploy or update CloudFormation stack
           if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
@@ -487,7 +569,7 @@ jobs:
               --parameters \
                 ParameterKey=Environment,ParameterValue=prod \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
-                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_PREFIX" \
+                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -502,7 +584,7 @@ jobs:
               --parameters \
                 ParameterKey=Environment,ParameterValue=prod \
                 ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
-                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_PREFIX" \
+                ParameterKey=CognitoDomainPrefix,ParameterValue="$COGNITO_DOMAIN" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
@@ -602,7 +684,7 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/SecureAuditAI-DeployRole
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/personal-github-oidc-role
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Cleanup failed deployment

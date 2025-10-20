@@ -19,7 +19,7 @@ Parameters:
 
   CognitoDomainPrefix:
     Type: String
-    Description: Unique domain prefix for Cognito (must be globally unique)
+    Description: Unique domain prefix for Cognito (provided by deployment workflow)
 
 # Mappings for configuration
 Mappings:
@@ -50,6 +50,18 @@ Resources:
             ExpirationInDays: !FindInMap [EnvironmentConfig, !Ref Environment, LogRetentionDays]
             NoncurrentVersionExpiration:
               NoncurrentDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  LambdaCodeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-lambda-code-${Environment}'
+      VersioningConfiguration:
+        Status: Enabled
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -434,47 +446,15 @@ Resources:
           COMPLIANCE_SNAPSHOTS_TABLE: !Ref ComplianceSnapshotsTable
           REPORTS_BUCKET: !Ref ReportsBucket
       Code:
-        ZipFile: |
-          import json
-          import boto3
-          import uuid
-          import os
-          from datetime import datetime
-
-          def lambda_handler(event, context):
-              # Initialize clients
-              dynamodb = boto3.resource('dynamodb')
-              audit_runs_table = dynamodb.Table(os.environ['AUDIT_RUNS_TABLE'])
-
-              # Create audit run
-              audit_run_id = str(uuid.uuid4())
-              audit_run = {
-                  'AuditRunId': audit_run_id,
-                  'Status': 'PENDING',
-                  'CreatedAt': datetime.utcnow().isoformat(),
-                  'Environment': os.environ['ENVIRONMENT'],
-                  'BedrockModelId': os.environ['BEDROCK_MODEL_ID']
-              }
-
-              audit_runs_table.put_item(Item=audit_run)
-
-              # Invoke AgentCore Runtime (placeholder - will be implemented)
-              # This would trigger the agent runtime via bedrock-agentcore-runtime client
-
-              return {
-                  'statusCode': 200,
-                  'body': json.dumps({
-                      'auditRunId': audit_run_id,
-                      'status': 'initiated'
-                  })
-              }
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Sub 'lambda/trigger_scan.zip'
 
   GetAuditRunsFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${AWS::StackName}-GetAuditRuns-${Environment}'
       Runtime: python3.11
-      Handler: lambda_function.lambda_handler
+      Handler: lambda_handler.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 30
       MemorySize: 256
@@ -482,33 +462,15 @@ Resources:
         Variables:
           AUDIT_RUNS_TABLE: !Ref AuditRunsTable
       Code:
-        ZipFile: |
-          import json
-          import boto3
-          import os
-          from boto3.dynamodb.conditions import Key
-
-          def lambda_handler(event, context):
-              dynamodb = boto3.resource('dynamodb')
-              table = dynamodb.Table(os.environ['AUDIT_RUNS_TABLE'])
-
-              # Query audit runs
-              response = table.scan()
-              items = response.get('Items', [])
-
-              return {
-                  'statusCode': 200,
-                  'body': json.dumps({
-                      'auditRuns': items
-                  })
-              }
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Sub 'lambda/api_audit_runs.zip'
 
   GetFindingsFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${AWS::StackName}-GetFindings-${Environment}'
       Runtime: python3.11
-      Handler: lambda_function.lambda_handler
+      Handler: lambda_handler.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 30
       MemorySize: 256
@@ -516,26 +478,8 @@ Resources:
         Variables:
           FINDINGS_TABLE: !Ref FindingsTable
       Code:
-        ZipFile: |
-          import json
-          import boto3
-          import os
-          from boto3.dynamodb.conditions import Key
-
-          def lambda_handler(event, context):
-              dynamodb = boto3.resource('dynamodb')
-              table = dynamodb.Table(os.environ['FINDINGS_TABLE'])
-
-              # Query findings
-              response = table.scan()
-              items = response.get('Items', [])
-
-              return {
-                  'statusCode': 200,
-                  'body': json.dumps({
-                      'findings': items
-                  })
-              }
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Sub 'lambda/api_findings.zip'
 
   # API Gateway Resources and Methods
   AuditRunsResource:
