@@ -74,8 +74,252 @@ jobs:
 
       - name: Validate CloudFormation template
         run: |
+          echo "🔍 Validating CloudFormation template..."
           aws cloudformation validate-template \
             --template-body file://cloudformation/template.yaml
+
+      - name: Verify Integration Points
+        run: |
+          echo "🔗 Verifying all integration points programmatically..."
+
+          # Install yq for YAML parsing if not available
+          if ! command -v yq &> /dev/null; then
+            echo "📦 Installing yq for YAML parsing..."
+            wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            chmod +x /usr/local/bin/yq
+          fi
+
+          TEMPLATE_FILE="cloudformation/template.yaml"
+
+          echo "1️⃣ Checking resource dependencies..."
+
+          # Extract all resources
+          RESOURCES=$(yq '.Resources | keys' "$TEMPLATE_FILE" | tr -d '["]')
+
+          # Check for missing DependsOn where needed
+          MISSING_DEPS=""
+          for resource in $RESOURCES; do
+            resource_type=$(yq ".Resources.$resource.Type" "$TEMPLATE_FILE")
+
+            case $resource_type in
+              "AWS::Lambda::Function")
+                # Lambda functions should depend on their IAM role
+                role_ref=$(yq ".Resources.$resource.Properties.Role" "$TEMPLATE_FILE")
+                if [[ $role_ref == *"GetAtt"* ]]; then
+                  role_resource=$(echo "$role_ref" | sed 's/.*GetAtt \([A-Za-z0-9]*\).*/\1/')
+                  if ! yq ".Resources.$resource.DependsOn" "$TEMPLATE_FILE" | grep -q "$role_resource"; then
+                    MISSING_DEPS="$MISSING_DEPS\n❌ $resource missing DependsOn for IAM role $role_resource"
+                  fi
+                fi
+                ;;
+              "AWS::ApiGateway::Method")
+                # API Gateway methods should depend on their authorizer
+                auth_type=$(yq ".Resources.$resource.Properties.AuthorizationType" "$TEMPLATE_FILE")
+                if [[ $auth_type == "COGNITO_USER_POOLS" ]]; then
+                  auth_ref=$(yq ".Resources.$resource.Properties.AuthorizerId" "$TEMPLATE_FILE")
+                  if [[ $auth_ref == *"Ref"* ]]; then
+                    auth_resource=$(echo "$auth_ref" | sed 's/.*Ref \([A-Za-z0-9]*\).*/\1/')
+                    if ! yq ".Resources.$resource.DependsOn" "$TEMPLATE_FILE" | grep -q "$auth_resource"; then
+                      MISSING_DEPS="$MISSING_DEPS\n❌ $resource missing DependsOn for authorizer $auth_resource"
+                    fi
+                  fi
+                fi
+                ;;
+            esac
+          done
+
+          if [ -n "$MISSING_DEPS" ]; then
+            echo "❌ Missing Dependencies Found:"
+            echo -e "$MISSING_DEPS"
+            exit 1
+          else
+            echo "✅ All resource dependencies are properly declared"
+          fi
+
+          echo "2️⃣ Validating resource references..."
+
+          # Check !Ref references
+          REF_ERRORS=""
+          while IFS= read -r ref; do
+            if [[ $ref =~ !Ref[[:space:]]+([A-Za-z0-9]+) ]]; then
+              resource_name="${BASH_REMATCH[1]}"
+              if ! echo "$RESOURCES" | grep -q "^$resource_name$"; then
+                REF_ERRORS="$REF_ERRORS\n❌ !Ref to non-existent resource: $resource_name"
+              fi
+            fi
+          done < <(grep -r "!Ref" "$TEMPLATE_FILE")
+
+          # Check !GetAtt references
+          while IFS= read -r getatt; do
+            if [[ $getatt =~ !GetAtt[[:space:]]+([A-Za-z0-9]+) ]]; then
+              resource_name="${BASH_REMATCH[1]}"
+              if ! echo "$RESOURCES" | grep -q "^$resource_name$"; then
+                REF_ERRORS="$REF_ERRORS\n❌ !GetAtt to non-existent resource: $resource_name"
+              fi
+            fi
+          done < <(grep -r "!GetAtt" "$TEMPLATE_FILE")
+
+          if [ -n "$REF_ERRORS" ]; then
+            echo "❌ Invalid References Found:"
+            echo -e "$REF_ERRORS"
+            exit 1
+          else
+            echo "✅ All resource references are valid"
+          fi
+
+          echo "3️⃣ Validating IAM policies..."
+
+          POLICY_ERRORS=""
+          # Check DynamoDB table ARNs in LambdaExecutionRole
+          for table in AuditRunsTable FindingsTable ComplianceSnapshotsTable; do
+            table_arn=$(yq ".Resources.$table" "$TEMPLATE_FILE" | grep -A 5 "Type.*DynamoDB::Table" | grep "TableName" | head -1)
+            if [ -n "$table_arn" ]; then
+              # Check if the ARN is referenced in the IAM policy
+              if ! grep -A 20 "DynamoDBAccess" "$TEMPLATE_FILE" | grep -q "$table"; then
+                POLICY_ERRORS="$POLICY_ERRORS\n❌ IAM policy missing access to $table"
+              fi
+            fi
+          done
+
+          # Check S3 bucket ARNs
+          reports_bucket=$(yq ".Resources.ReportsBucket" "$TEMPLATE_FILE" | grep -A 5 "Type.*S3::Bucket" | grep "BucketName" | head -1)
+          if [ -n "$reports_bucket" ]; then
+            if ! grep -A 10 "S3Access" "$TEMPLATE_FILE" | grep -q "ReportsBucket"; then
+              POLICY_ERRORS="$POLICY_ERRORS\n❌ IAM policy missing access to ReportsBucket"
+            fi
+          fi
+
+          if [ -n "$POLICY_ERRORS" ]; then
+            echo "❌ IAM Policy Issues Found:"
+            echo -e "$POLICY_ERRORS"
+            exit 1
+          else
+            echo "✅ All IAM policies are properly configured"
+          fi
+
+          echo "4️⃣ Validating Lambda environment variables..."
+
+          ENV_ERRORS=""
+          # Check that Lambda functions reference existing resources in their environment variables
+          for lambda_func in TriggerScanFunction GetAuditRunsFunction GetFindingsFunction; do
+            # Check DynamoDB table references
+            audit_runs_table=$(yq ".Resources.$lambda_func.Properties.Environment.Variables.AUDIT_RUNS_TABLE" "$TEMPLATE_FILE")
+            if [[ $audit_runs_table == "!Ref AuditRunsTable" ]]; then
+              if ! echo "$RESOURCES" | grep -q "AuditRunsTable"; then
+                ENV_ERRORS="$ENV_ERRORS\n❌ $lambda_func references non-existent AUDIT_RUNS_TABLE"
+              fi
+            fi
+
+            findings_table=$(yq ".Resources.$lambda_func.Properties.Environment.Variables.FINDINGS_TABLE" "$TEMPLATE_FILE")
+            if [[ $findings_table == "!Ref FindingsTable" ]]; then
+              if ! echo "$RESOURCES" | grep -q "FindingsTable"; then
+                ENV_ERRORS="$ENV_ERRORS\n❌ $lambda_func references non-existent FINDINGS_TABLE"
+              fi
+            fi
+
+            reports_bucket=$(yq ".Resources.$lambda_func.Properties.Environment.Variables.REPORTS_BUCKET" "$TEMPLATE_FILE")
+            if [[ $reports_bucket == "!Ref ReportsBucket" ]]; then
+              if ! echo "$RESOURCES" | grep -q "ReportsBucket"; then
+                ENV_ERRORS="$ENV_ERRORS\n❌ $lambda_func references non-existent REPORTS_BUCKET"
+              fi
+            fi
+          done
+
+          if [ -n "$ENV_ERRORS" ]; then
+            echo "❌ Lambda Environment Variable Issues:"
+            echo -e "$ENV_ERRORS"
+            exit 1
+          else
+            echo "✅ All Lambda environment variables reference valid resources"
+          fi
+
+          echo "5️⃣ Validating API Gateway integrations..."
+
+          API_ERRORS=""
+          # Check that API Gateway methods integrate with existing Lambda functions
+          for method in AuditRunsMethod FindingsMethod ScanMethod; do
+            integration_uri=$(yq ".Resources.$method.Properties.Integration.Uri" "$TEMPLATE_FILE")
+            if [[ $integration_uri == *"arn:aws:apigateway"* ]]; then
+              # Extract Lambda function name from ARN
+              lambda_func=$(echo "$integration_uri" | sed 's/.*functions\/\([^.]*\).*/\1/')
+              # Check if the Lambda function exists
+              lambda_base_name=$(echo "$lambda_func" | sed 's/.*-\([A-Za-z]*\)-.*/\1/')
+              if [[ $lambda_base_name == "TriggerScan" ]]; then
+                expected_resource="TriggerScanFunction"
+              elif [[ $lambda_base_name == "GetAuditRuns" ]]; then
+                expected_resource="GetAuditRunsFunction"
+              elif [[ $lambda_base_name == "GetFindings" ]]; then
+                expected_resource="GetFindingsFunction"
+              fi
+
+              if [ -n "$expected_resource" ] && ! echo "$RESOURCES" | grep -q "$expected_resource"; then
+                API_ERRORS="$API_ERRORS\n❌ $method integrates with non-existent Lambda function"
+              fi
+            fi
+          done
+
+          if [ -n "$API_ERRORS" ]; then
+            echo "❌ API Gateway Integration Issues:"
+            echo -e "$API_ERRORS"
+            exit 1
+          else
+            echo "✅ All API Gateway integrations are valid"
+          fi
+
+          echo "6️⃣ Validating EventBridge integrations..."
+
+          EVENT_ERRORS=""
+          # Check EventBridge rule targets existing Lambda function
+          rule_target=$(yq ".Resources.ScheduledScanRule.Properties.Targets[0].Arn" "$TEMPLATE_FILE")
+          if [[ $rule_target == *"GetAtt"* ]]; then
+            target_resource=$(echo "$rule_target" | sed 's/.*GetAtt \([A-Za-z0-9]*\).*/\1/')
+            if ! echo "$RESOURCES" | grep -q "$target_resource"; then
+              EVENT_ERRORS="$EVENT_ERRORS\n❌ ScheduledScanRule targets non-existent resource: $target_resource"
+            fi
+          fi
+
+          if [ -n "$EVENT_ERRORS" ]; then
+            echo "❌ EventBridge Integration Issues:"
+            echo -e "$EVENT_ERRORS"
+            exit 1
+          else
+            echo "✅ EventBridge integrations are valid"
+          fi
+
+          echo "7️⃣ Validating SSM parameter dependencies..."
+
+          SSM_ERRORS=""
+          # Check that SSM parameters are created after their dependent resources
+          ssm_params=$(yq '.Resources | to_entries | .[] | select(.value.Type == "AWS::SSM::Parameter") | .key' "$TEMPLATE_FILE")
+
+          for param in $ssm_params; do
+            param_value=$(yq ".Resources.$param.Properties.Value" "$TEMPLATE_FILE")
+
+            # Check if parameter value references other resources
+            if [[ $param_value == *"Ref"* ]] || [[ $param_value == *"GetAtt"* ]]; then
+              # Extract referenced resource
+              if [[ $param_value == *"Ref "* ]]; then
+                ref_resource=$(echo "$param_value" | sed 's/.*Ref \([A-Za-z0-9]*\).*/\1/')
+              elif [[ $param_value == *"GetAtt"* ]]; then
+                ref_resource=$(echo "$param_value" | sed 's/.*GetAtt \([A-Za-z0-9]*\).*/\1/')
+              fi
+
+              if [ -n "$ref_resource" ] && ! echo "$RESOURCES" | grep -q "$ref_resource"; then
+                SSM_ERRORS="$SSM_ERRORS\n❌ SSM parameter $param references non-existent resource: $ref_resource"
+              fi
+            fi
+          done
+
+          if [ -n "$SSM_ERRORS" ]; then
+            echo "❌ SSM Parameter Issues:"
+            echo -e "$SSM_ERRORS"
+            exit 1
+          else
+            echo "✅ All SSM parameters reference valid resources"
+          fi
+
+          echo "🎉 All integration points verified successfully!"
+          echo "✅ Template is ready for deployment"
 
       - name: Validate CloudFormation IAM requirements
         run: |
@@ -159,43 +403,48 @@ jobs:
           cd ..
 
           # Upload packages to S3
+          export AWS_REGION="${{ env.AWS_REGION }}"
+          export AWS_DEFAULT_REGION="${{ env.AWS_REGION }}"
           ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           LAMBDA_BUCKET="${STACK_NAME}-lambda-code-${ENVIRONMENT}"
 
-          # Ensure bucket exists in the correct region
-          echo "🔍 Checking bucket ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}..."
+          echo "🔍 Checking bucket ${LAMBDA_BUCKET} in region ${AWS_REGION}..."
 
-          # First, try to check if bucket exists in the expected region
-          if aws s3api head-bucket --bucket "${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }} 2>/dev/null; then
-            echo "✅ Bucket ${LAMBDA_BUCKET} exists in region ${{ env.AWS_REGION }}"
-          else
-            echo "📦 Bucket not found in ${{ env.AWS_REGION }}, checking globally..."
+          # Check bucket location globally
+          if BUCKET_LOCATION=$(aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" 2>/dev/null); then
+            BUCKET_REGION=$(echo "$BUCKET_LOCATION" | jq -r '.LocationConstraint // "us-east-1"')
+            echo "📍 Bucket ${LAMBDA_BUCKET} found in region: ${BUCKET_REGION}"
 
-            # Check if bucket exists anywhere
-            if aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" >/dev/null 2>&1; then
-              BUCKET_REGION=$(aws s3api get-bucket-location --bucket "${LAMBDA_BUCKET}" --query 'LocationConstraint' --output text 2>/dev/null || echo "us-east-1")
-
-              # Normalize null to us-east-1
-              if [ "$BUCKET_REGION" = "null" ]; then
-                BUCKET_REGION="us-east-1"
-              fi
-
-              echo "❌ Bucket ${LAMBDA_BUCKET} exists in region ${BUCKET_REGION}, not ${{ env.AWS_REGION }}"
-              echo "This causes PermanentRedirect errors. Please:"
-              echo "1. Delete the bucket from region ${BUCKET_REGION}, or"
-              echo "2. Use a different environment name to create a new bucket"
+            if [ "$BUCKET_REGION" != "$AWS_REGION" ]; then
+              echo "❌ CRITICAL: Bucket ${LAMBDA_BUCKET} exists in ${BUCKET_REGION} but deployment is in ${AWS_REGION}"
+              echo "This causes PermanentRedirect errors and Lambda deployment failures."
+              echo ""
+              echo "IMMEDIATE ACTION REQUIRED:"
+              echo "1. Go to AWS S3 console (region: ${BUCKET_REGION})"
+              echo "2. Delete bucket: ${LAMBDA_BUCKET}"
+              echo "3. Re-run the deployment"
+              echo ""
+              echo "Alternatively, change the environment name to create a new bucket."
               exit 1
             else
-              echo "📦 Bucket doesn't exist anywhere, creating ${LAMBDA_BUCKET} in region ${{ env.AWS_REGION }}"
-              aws s3 mb "s3://${LAMBDA_BUCKET}" --region ${{ env.AWS_REGION }}
+              echo "✅ Bucket ${LAMBDA_BUCKET} is in correct region (${BUCKET_REGION})"
             fi
+          else
+            echo "📦 Bucket ${LAMBDA_BUCKET} doesn't exist, creating in region ${AWS_REGION}"
+            if ! aws s3 mb "s3://${LAMBDA_BUCKET}" --region "${AWS_REGION}"; then
+              echo "❌ Failed to create bucket ${LAMBDA_BUCKET} in region ${AWS_REGION}"
+              exit 1
+            fi
+            echo "✅ Bucket ${LAMBDA_BUCKET} created successfully"
           fi
 
-          # Upload packages
-          aws s3 cp lambda-packages/trigger_scan.zip "s3://${LAMBDA_BUCKET}/lambda/trigger_scan.zip" --region ${{ env.AWS_REGION }}
-          aws s3 cp lambda-packages/api_audit_runs.zip "s3://${LAMBDA_BUCKET}/lambda/api_audit_runs.zip" --region ${{ env.AWS_REGION }}
-          aws s3 cp lambda-packages/api_findings.zip "s3://${LAMBDA_BUCKET}/lambda/api_findings.zip" --region ${{ env.AWS_REGION }}
+          # Upload packages with explicit region
+          echo "📤 Uploading Lambda packages..."
+          aws s3 cp lambda-packages/trigger_scan.zip "s3://${LAMBDA_BUCKET}/lambda/trigger_scan.zip" --region "${AWS_REGION}" --quiet
+          aws s3 cp lambda-packages/api_audit_runs.zip "s3://${LAMBDA_BUCKET}/lambda/api_audit_runs.zip" --region "${AWS_REGION}" --quiet
+          aws s3 cp lambda-packages/api_findings.zip "s3://${LAMBDA_BUCKET}/lambda/api_findings.zip" --region "${AWS_REGION}" --quiet
+          echo "✅ All Lambda packages uploaded successfully"
 
       - name: Deploy CloudFormation stack
         run: |
@@ -244,6 +493,8 @@ jobs:
 
       - name: Create or verify Cognito domain
         run: |
+          export AWS_REGION="${{ env.AWS_REGION }}"
+          export AWS_DEFAULT_REGION="${{ env.AWS_REGION }}"
           ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           COGNITO_DOMAIN="${{ steps.generate-domain.outputs.COGNITO_DOMAIN }}"

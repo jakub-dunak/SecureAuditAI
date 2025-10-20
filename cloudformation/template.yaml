@@ -417,6 +417,7 @@ Resources:
   # Lambda Functions
   TriggerScanFunction:
     Type: AWS::Lambda::Function
+    DependsOn: LambdaExecutionRole
     Properties:
       FunctionName: !Sub '${AWS::StackName}-TriggerScan-${Environment}'
       Runtime: python3.11
@@ -438,6 +439,7 @@ Resources:
 
   GetAuditRunsFunction:
     Type: AWS::Lambda::Function
+    DependsOn: LambdaExecutionRole
     Properties:
       FunctionName: !Sub '${AWS::StackName}-GetAuditRuns-${Environment}'
       Runtime: python3.11
@@ -454,6 +456,7 @@ Resources:
 
   GetFindingsFunction:
     Type: AWS::Lambda::Function
+    DependsOn: LambdaExecutionRole
     Properties:
       FunctionName: !Sub '${AWS::StackName}-GetFindings-${Environment}'
       Runtime: python3.11
@@ -478,6 +481,7 @@ Resources:
 
   AuditRunsMethod:
     Type: AWS::ApiGateway::Method
+    DependsOn: CognitoAuthorizer
     Properties:
       RestApiId: !Ref RestApi
       ResourceId: !Ref AuditRunsResource
@@ -500,6 +504,7 @@ Resources:
 
   FindingsMethod:
     Type: AWS::ApiGateway::Method
+    DependsOn: CognitoAuthorizer
     Properties:
       RestApiId: !Ref RestApi
       ResourceId: !Ref FindingsResource
@@ -522,6 +527,7 @@ Resources:
 
   ScanMethod:
     Type: AWS::ApiGateway::Method
+    DependsOn: CognitoAuthorizer
     Properties:
       RestApiId: !Ref RestApi
       ResourceId: !Ref ScanResource
