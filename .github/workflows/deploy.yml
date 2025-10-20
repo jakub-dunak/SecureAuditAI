@@ -45,6 +45,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/personal-github-oidc-role
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Validate CloudFormation template
         run: |
           echo "🔍 Validating CloudFormation template..."
