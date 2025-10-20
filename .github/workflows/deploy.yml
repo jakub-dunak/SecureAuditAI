@@ -99,8 +99,8 @@ jobs:
           DETERMINISTIC_SUFFIX=$(echo "$DETERMINISTIC_SUFFIX" | tr -cd 'a-z0-9')
           COGNITO_PREFIX="secureauditai-${ENVIRONMENT}-${DETERMINISTIC_SUFFIX}"
 
-          # Validate domain format using AWS pattern
-          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
+          # Validate domain format (must be lowercase alphanumeric with hyphens, 1-63 chars)
+          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
             echo "❌ Invalid domain format: $COGNITO_PREFIX"
             exit 1
           fi
@@ -136,7 +136,7 @@ jobs:
           echo "🔍 Domain length: ${#COGNITO_PREFIX} characters"
 
           # Final validation
-          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$ ]]; then
+          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
             echo "❌ Final domain validation failed: $COGNITO_PREFIX"
             exit 1
           fi
@@ -409,8 +409,8 @@ jobs:
           DETERMINISTIC_SUFFIX=$(echo "$DETERMINISTIC_SUFFIX" | tr -cd 'a-z0-9')
           COGNITO_PREFIX="secureauditai-${ENVIRONMENT}-${DETERMINISTIC_SUFFIX}"
 
-          # Validate domain format using AWS pattern
-          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
+          # Validate domain format (must be lowercase alphanumeric with hyphens, 1-63 chars)
+          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
             echo "❌ Invalid domain format: $COGNITO_PREFIX"
             exit 1
           fi
@@ -446,7 +446,7 @@ jobs:
           echo "🔍 Domain length: ${#COGNITO_PREFIX} characters"
 
           # Final validation
-          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?$ ]]; then
+          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
             echo "❌ Final domain validation failed: $COGNITO_PREFIX"
             exit 1
           fi
