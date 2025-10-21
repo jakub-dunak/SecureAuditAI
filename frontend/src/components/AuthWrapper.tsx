@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Navigate } from 'react-router-dom';
 import {
   Authenticator,
   useAuthenticator,
@@ -11,11 +10,8 @@ import {
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 
-// Import AWS configuration
-import awsconfig from '../aws-exports';
-
 // Check if we have valid Cognito configuration for authentication
-const hasValidCognitoConfig = awsconfig.aws_user_pools_id && awsconfig.aws_user_pools_web_client_id;
+const hasValidCognitoConfig = process.env.REACT_APP_USER_POOL_ID && process.env.REACT_APP_USER_POOL_CLIENT_ID;
 
 // Custom theme for Amplify Authenticator
 const authTheme = {
@@ -129,32 +125,33 @@ const AuthLoading: React.FC = () => (
   </div>
 );
 
-// Main authentication form wrapper
-const AuthForm: React.FC = () => (
-  <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
-    <div className="w-full max-w-md">
-      <ThemeProvider theme={authTheme}>
-        <Authenticator
-          components={{
-            SignIn: {
-              Header: CustomSignIn,
-            },
-            SignUp: {
-              Header: CustomSignUp,
-            },
-          }}
-          signUpAttributes={['email', 'name']}
-          loginMechanisms={['email']}
-          socialProviders={[]}
-          variation="default"
-        />
-      </ThemeProvider>
-    </div>
-  </div>
-);
 
 // Component that handles authentication when Cognito is configured
 const AuthenticatedWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
+  return (
+    <ThemeProvider theme={authTheme}>
+      <Authenticator
+        components={{
+          SignIn: {
+            Header: CustomSignIn,
+          },
+          SignUp: {
+            Header: CustomSignUp,
+          },
+        }}
+        signUpAttributes={['email', 'name']}
+        loginMechanisms={['email']}
+        socialProviders={[]}
+        variation="default"
+      >
+        <AuthenticatorContent>{children}</AuthenticatorContent>
+      </Authenticator>
+    </ThemeProvider>
+  );
+};
+
+// Inner component that uses useAuthenticator hook
+const AuthenticatorContent: React.FC<AuthWrapperProps> = ({ children }) => {
   const { authStatus } = useAuthenticator((context) => [context.authStatus]);
 
   // Show loading while checking authentication status
@@ -162,18 +159,13 @@ const AuthenticatedWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
     return <AuthLoading />;
   }
 
-  // If not authenticated, show login form
-  if (authStatus === 'unauthenticated') {
-    return <AuthForm />;
-  }
-
   // If authenticated, render the protected content
   if (authStatus === 'authenticated') {
     return <>{children}</>;
   }
 
-  // Default fallback (should not be reached in normal flow)
-  return <Navigate to="/dashboard" replace />;
+  // Default fallback - this shouldn't be reached since Authenticator handles unauthenticated state
+  return <AuthLoading />;
 };
 
 // Development mode component (when Cognito is not configured)

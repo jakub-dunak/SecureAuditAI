@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthenticator } from '@aws-amplify/ui-react';
-import awsmobile from '../aws-exports';
 
 // Check if we have valid Cognito configuration for authentication
-const hasValidCognitoConfig = awsmobile.aws_user_pools_id && awsmobile.aws_user_pools_web_client_id;
+const hasValidCognitoConfig = process.env.REACT_APP_USER_POOL_ID && process.env.REACT_APP_USER_POOL_CLIENT_ID;
 
 interface NavItem {
   path: string;
