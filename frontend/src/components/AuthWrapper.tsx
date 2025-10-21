@@ -11,8 +11,11 @@ import {
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 
+// Import AWS configuration
+import awsconfig from '../aws-exports';
+
 // Check if we have valid Cognito configuration for authentication
-const hasValidCognitoConfig = process.env.REACT_APP_USER_POOL_ID && process.env.REACT_APP_USER_POOL_CLIENT_ID;
+const hasValidCognitoConfig = awsconfig.aws_user_pools_id && awsconfig.aws_user_pools_web_client_id;
 
 // Custom theme for Amplify Authenticator
 const authTheme = {
