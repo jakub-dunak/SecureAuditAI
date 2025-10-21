@@ -121,7 +121,8 @@ jobs:
           fi
 
       - name: Package CloudFormation template
-        run: aws cloudformation package \
+        run: |
+          aws cloudformation package \
             --template-file cloudformation/template.yaml \
             --s3-bucket ${{ env.DEPLOYMENT_BUCKET }} \
             --output-template-file packaged-template.yaml \
