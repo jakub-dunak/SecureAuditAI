@@ -23,9 +23,9 @@ function App() {
   return (
     <Router>
       <AuthWrapper>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-neutral-50">
           <Navigation />
-          <main className="py-8">
+          <main className="flex-1">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />

@@ -42,9 +42,9 @@ jobs:
 
       - name: Validate Lambda packages exist
         run: |
-          [ -f "lambda/trigger_scan.py" ] || (echo "❌ trigger_scan.py missing" && exit 1)
-          [ -f "lambda/api_audit_runs.py" ] || (echo "❌ api_audit_runs.py missing" && exit 1)
-          [ -f "lambda/api_findings.py" ] || (echo "❌ api_findings.py missing" && exit 1)
+          [ -f "lambda/trigger_scan.py" ] || (echo "trigger_scan.py missing" && exit 1)
+          [ -f "lambda/api_audit_runs.py" ] || (echo "api_audit_runs.py missing" && exit 1)
+          [ -f "lambda/api_findings.py" ] || (echo "api_findings.py missing" && exit 1)
 
   # Deploy to Environment
   deploy:
@@ -100,7 +100,7 @@ jobs:
           COGNITO_PREFIX="secureauditai-${ENVIRONMENT}-${SUFFIX}"
 
           if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
-            echo "❌ Invalid domain format: $COGNITO_PREFIX"
+            echo "Invalid domain format: $COGNITO_PREFIX"
             exit 1
           fi
 
@@ -114,10 +114,7 @@ jobs:
 
           # Check if bucket exists, create if not
           if ! aws s3 ls s3://${BUCKET_NAME} --region ${{ env.AWS_REGION }} 2>/dev/null; then
-            aws s3 mb s3://${BUCKET_NAME} --region ${{ env.AWS_REGION }} || (echo "❌ Failed to create deployment bucket" && exit 1)
-            echo "✅ Created deployment bucket: ${BUCKET_NAME}"
-          else
-            echo "✅ Using existing deployment bucket: ${BUCKET_NAME}"
+            aws s3 mb s3://${BUCKET_NAME} --region ${{ env.AWS_REGION }} || (echo "Failed to create deployment bucket" && exit 1)
           fi
 
       - name: Package CloudFormation template
@@ -140,8 +137,6 @@ jobs:
         if: steps.lambda-cache.outputs.cache-hit != 'true'
         run: |
           ENVIRONMENT="${{ github.event.inputs.environment }}"
-          echo "📦 Packaging Lambda functions..."
-
           cd lambda
 
           # Package Lambda functions with environment suffix for prod
@@ -177,9 +172,7 @@ jobs:
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
           if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
-            echo "🔄 Updating existing stack: $STACK_NAME"
-
-            if aws cloudformation update-stack \
+            aws cloudformation update-stack \
               --stack-name "$STACK_NAME" \
               --template-body file://packaged-template.yaml \
               --parameters \
@@ -187,22 +180,12 @@ jobs:
                 ParameterKey=BedrockModelId,ParameterValue="${{ secrets.BEDROCK_MODEL_ID || 'amazon.titan-text-premier-v1:0' }}" \
                 ParameterKey=LambdaCodeBucketName,ParameterValue="${{ env.DEPLOYMENT_BUCKET }}" \
               --capabilities CAPABILITY_NAMED_IAM \
-              --region ${{ env.AWS_REGION }} &> /dev/null; then
+              --region ${{ env.AWS_REGION }} &> /dev/null || (echo "Stack update failed" && aws cloudformation cancel-update-stack --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} || true && exit 1)
 
-              aws cloudformation wait stack-update-complete \
-                --stack-name "$STACK_NAME" \
-                --region ${{ env.AWS_REGION }}
-
-              echo "✅ Stack update completed"
-            else
-              echo "❌ Stack update failed - attempting rollback"
-              # Attempt rollback on failure
-              aws cloudformation cancel-update-stack --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} || true
-              exit 1
-            fi
+            aws cloudformation wait stack-update-complete \
+              --stack-name "$STACK_NAME" \
+              --region ${{ env.AWS_REGION }}
           else
-            echo "📦 Creating new stack: $STACK_NAME"
-
             aws cloudformation create-stack \
               --stack-name "$STACK_NAME" \
               --template-body file://packaged-template.yaml \
@@ -216,8 +199,6 @@ jobs:
             aws cloudformation wait stack-create-complete \
               --stack-name "$STACK_NAME" \
               --region ${{ env.AWS_REGION }}
-
-            echo "✅ Stack creation completed"
           fi
 
       - name: Get CloudFormation outputs
@@ -230,26 +211,24 @@ jobs:
           USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
           AMPLIFY_APP_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
           AMPLIFY_APP_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppUrl`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          FRONTEND_BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' --output text --region ${{ env.AWS_REGION }})
 
           echo "USER_POOL_ID=${USER_POOL_ID}" >> $GITHUB_OUTPUT
           echo "USER_POOL_CLIENT_ID=${USER_POOL_CLIENT_ID}" >> $GITHUB_OUTPUT
           echo "AMPLIFY_APP_ID=${AMPLIFY_APP_ID}" >> $GITHUB_OUTPUT
           echo "AMPLIFY_APP_URL=${AMPLIFY_APP_URL}" >> $GITHUB_OUTPUT
+          echo "FRONTEND_BUCKET_NAME=${FRONTEND_BUCKET_NAME}" >> $GITHUB_OUTPUT
 
       - name: Create Cognito domain
         run: |
           COGNITO_DOMAIN="${{ steps.generate-domain.outputs.COGNITO_DOMAIN }}"
           USER_POOL_ID="${{ steps.cf-outputs.outputs.USER_POOL_ID }}"
 
-          if aws cognito-idp describe-user-pool-domain --domain "$COGNITO_DOMAIN" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-            echo "✅ Domain $COGNITO_DOMAIN already exists"
-          else
-            echo "📝 Creating domain: $COGNITO_DOMAIN"
+          if ! aws cognito-idp describe-user-pool-domain --domain "$COGNITO_DOMAIN" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
             aws cognito-idp create-user-pool-domain \
               --domain "$COGNITO_DOMAIN" \
               --user-pool-id "$USER_POOL_ID" \
               --region ${{ env.AWS_REGION }}
-            echo "✅ Domain $COGNITO_DOMAIN created"
           fi
 
       - name: Cache frontend dependencies
@@ -277,11 +256,10 @@ jobs:
           cd frontend
 
           # Configure frontend with CloudFormation outputs
-          node ../scripts/configure-frontend.js "${{ steps.cf-outputs.outputs.USER_POOL_ID }}" "${{ steps.cf-outputs.outputs.USER_POOL_CLIENT_ID }}" "${{ env.AWS_REGION }}"
+          node ../scripts/configure-frontend.js "${{ steps.cf-outputs.outputs.USER_POOL_ID }}" "${{ steps.cf-outputs.outputs.USER_POOL_CLIENT_ID }}" "${{ env.AWS_REGION }}" "${{ github.event.inputs.environment }}"
 
-          # Build frontend
-          echo "🔨 Building React application..."
-          npm run build
+          # Build frontend for production
+          npm run build:prod
 
       - name: Deploy React frontend to Amplify
         id: deploy-amplify
@@ -289,13 +267,9 @@ jobs:
           cd frontend
 
           # Create a deployment package
-          echo "📦 Creating deployment package..."
           cd build
           zip -r ../amplify-deployment.zip .
           cd ..
-
-          # Deploy to Amplify
-          echo "🚀 Deploying to AWS Amplify..."
 
           ENVIRONMENT="${{ github.event.inputs.environment }}"
           AMPLIFY_APP_ID="${{ steps.cf-outputs.outputs.AMPLIFY_APP_ID }}"
@@ -319,75 +293,74 @@ jobs:
               -H "Content-Type: application/zip" \
               --max-time 300 \
               --data-binary @amplify-deployment.zip; then
-              echo "✅ Frontend package uploaded successfully"
               break
             else
               RETRY_COUNT=$((RETRY_COUNT + 1))
               if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                echo "⚠️ Upload failed, retrying in 10 seconds... (attempt $RETRY_COUNT/$MAX_RETRIES)"
                 sleep 10
               else
-                echo "❌ Failed to upload frontend package after $MAX_RETRIES attempts"
+                echo "Failed to upload frontend package after $MAX_RETRIES attempts"
                 exit 1
               fi
             fi
           done
 
           # Start the deployment
-          if aws amplify start-deployment \
+          aws amplify start-deployment \
             --app-id "$AMPLIFY_APP_ID" \
             --branch-name "$ENVIRONMENT" \
             --job-id "$JOB_ID" \
-            --region ${{ env.AWS_REGION }}; then
-            echo "✅ Frontend deployment initiated"
-          else
-            echo "❌ Failed to start Amplify deployment"
+            --region ${{ env.AWS_REGION }} || (echo "Failed to start Amplify deployment" && exit 1)
+
+          # Wait for deployment completion
+          MAX_WAIT=900  # 15 minutes
+          WAIT_TIME=0
+          while [ $WAIT_TIME -lt $MAX_WAIT ]; do
+            JOB_STATUS=$(aws amplify get-job --app-id "$AMPLIFY_APP_ID" --branch-name "$ENVIRONMENT" --job-id "$JOB_ID" --query 'job.summary.status' --output text --region ${{ env.AWS_REGION }})
+            if [ "$JOB_STATUS" = "SUCCEED" ]; then
+              break
+            elif [ "$JOB_STATUS" = "FAILED" ] || [ "$JOB_STATUS" = "CANCELLED" ]; then
+              echo "Amplify deployment failed with status: $JOB_STATUS"
+              exit 1
+            fi
+            sleep 30
+            WAIT_TIME=$((WAIT_TIME + 30))
+          done
+
+          if [ $WAIT_TIME -ge $MAX_WAIT ]; then
+            echo "Amplify deployment timed out after 15 minutes"
             exit 1
           fi
+
+          # Upload frontend build to S3 bucket for backup/static hosting
+          aws s3 sync build/ s3://${{ steps.cf-outputs.outputs.FRONTEND_BUCKET_NAME }}/ --delete --region ${{ env.AWS_REGION }}
 
       - name: Check AgentCore deployment status
         if: github.event.inputs.environment == 'prod'
         run: |
           ENVIRONMENT="${{ github.event.inputs.environment }}"
-
-          if aws ecr describe-repositories --repository-names "secureauditai-agentcore-${ENVIRONMENT}" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-            aws ecr describe-images --repository-name "secureauditai-agentcore-${ENVIRONMENT}" --region ${{ env.AWS_REGION }} --query 'imageDetails[0].imageDigest' >/dev/null 2>&1 || echo "⚠️ AgentCore repository exists but no image found"
-          fi
+          aws ecr describe-repositories --repository-names "secureauditai-agentcore-${ENVIRONMENT}" --region ${{ env.AWS_REGION }} >/dev/null 2>&1 && aws ecr describe-images --repository-name "secureauditai-agentcore-${ENVIRONMENT}" --region ${{ env.AWS_REGION }} --query 'imageDetails[0].imageDigest' >/dev/null 2>&1
 
       - name: Verify deployment health
         run: |
-          echo "🔍 Verifying deployment health..."
-
           ENVIRONMENT="${{ github.event.inputs.environment }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
           # Check CloudFormation stack status
           STACK_STATUS=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text --region ${{ env.AWS_REGION }})
 
-          if [[ "$STACK_STATUS" == *"COMPLETE"* ]]; then
-            echo "✅ CloudFormation stack is healthy: $STACK_STATUS"
-          else
-            echo "❌ CloudFormation stack is in failed state: $STACK_STATUS"
+          if [[ "$STACK_STATUS" != *"COMPLETE"* ]]; then
+            echo "CloudFormation stack in failed state: $STACK_STATUS"
             exit 1
           fi
 
           # Check Amplify app status
           AMPLIFY_APP_ID="${{ steps.cf-outputs.outputs.AMPLIFY_APP_ID }}"
-          BRANCH_STATUS=$(aws amplify get-branch --app-id "$AMPLIFY_APP_ID" --branch-name "$ENVIRONMENT" --query 'branch.branchArn' --output text --region ${{ env.AWS_REGION }} 2>/dev/null)
-
-          if [ $? -eq 0 ]; then
-            echo "✅ Amplify branch exists and is accessible"
-          else
-            echo "⚠️ Could not verify Amplify branch status"
-          fi
-
-          echo "✅ Deployment verification completed"
+          aws amplify get-branch --app-id "$AMPLIFY_APP_ID" --branch-name "$ENVIRONMENT" --query 'branch.branchArn' --output text --region ${{ env.AWS_REGION }} >/dev/null
 
       - name: Cleanup on failure
         if: failure()
         run: |
-          echo "🧹 Cleaning up after deployment failure..."
-
           ENVIRONMENT="${{ github.event.inputs.environment }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
@@ -396,18 +369,13 @@ jobs:
             STACK_STATUS=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text --region ${{ env.AWS_REGION }})
 
             if [[ "$STACK_STATUS" == *"FAILED"* ]] || [[ "$STACK_STATUS" == *"ROLLBACK"* ]]; then
-              echo "⚠️ Stack is in failed state ($STACK_STATUS), attempting cleanup..."
-
-              # Try to delete the failed stack
               aws cloudformation delete-stack --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }}
-              aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} || echo "⚠️ Stack deletion may still be in progress"
+              aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} || true
             fi
           fi
 
           # Clean up any temporary files
           rm -f frontend/amplify-deployment.zip packaged-template.yaml .cf-validation || true
-
-          echo "🧹 Cleanup completed"
 
   # Post-deployment validation
   validate-deployment:
@@ -419,8 +387,7 @@ jobs:
     steps:
       - name: Validate deployment
         run: |
-          echo "🔍 Validating deployment for ${{ github.event.inputs.environment }} environment..."
-          echo "✅ ${{ github.event.inputs.environment }} deployment validated successfully"
+          echo "Deployment validated for ${{ github.event.inputs.environment }}"
 
   # Cleanup resources (manual trigger)
   cleanup:
@@ -431,4 +398,4 @@ jobs:
     steps:
       - name: Cleanup notification
         run: |
-          echo "🧹 Cleanup job triggered - implement resource cleanup logic here"
+          echo "Cleanup job triggered"

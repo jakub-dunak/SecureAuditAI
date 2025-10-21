@@ -2,16 +2,16 @@
 
 /**
  * Configures the frontend aws-exports.js with CloudFormation outputs
- * Usage: node scripts/configure-frontend.js <user-pool-id> <user-pool-client-id> <region>
+ * Usage: node scripts/configure-frontend.js <user-pool-id> <user-pool-client-id> [region] [environment]
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const [,, userPoolId, userPoolClientId, region = 'us-west-2'] = process.argv;
+const [,, userPoolId, userPoolClientId, region = 'us-west-2', environment = 'production'] = process.argv;
 
 if (!userPoolId || !userPoolClientId) {
-  console.error('Usage: node scripts/configure-frontend.js <user-pool-id> <user-pool-client-id> [region]');
+  console.error('Usage: node scripts/configure-frontend.js <user-pool-id> <user-pool-client-id> [region] [environment]');
   process.exit(1);
 }
 
@@ -43,11 +43,30 @@ const config = {
 
 const configContent = `// AWS Amplify configuration
 // Auto-generated from CloudFormation outputs on ${new Date().toISOString()}
+// Environment: ${environment}
 
 const awsmobile = ${JSON.stringify(config, null, 2)};
 
 export default awsmobile;
 `;
+
+// Create a production environment configuration file
+const envConfig = `# Production Environment Configuration
+# Auto-generated on ${new Date().toISOString()}
+
+REACT_APP_AWS_REGION=${region}
+REACT_APP_USER_POOL_ID=${userPoolId}
+REACT_APP_USER_POOL_CLIENT_ID=${userPoolClientId}
+REACT_APP_ENVIRONMENT=${environment}
+REACT_APP_APP_NAME=SecureAuditAI
+REACT_APP_APP_VERSION=1.0.0
+REACT_APP_ENABLE_ANALYTICS=false
+REACT_APP_ENABLE_DEBUG=false
+`;
+
+// Write the environment configuration file
+const envPath = path.join(__dirname, '..', 'frontend', '.env.production');
+fs.writeFileSync(envPath, envConfig);
 
 const configPath = path.join(__dirname, '..', 'frontend', 'src', 'aws-exports.js');
 fs.writeFileSync(configPath, configContent);

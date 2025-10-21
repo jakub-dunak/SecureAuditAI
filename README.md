@@ -155,7 +155,25 @@ aws cloudformation wait stack-create-complete --stack-name secureauditai-agent
 
 **Note**: The recommended approach is to use the GitHub Actions workflow, which automatically generates and validates unique domain prefixes.
 
-### 2. Set Up Frontend
+### 2. Test Production Deployment
+
+After deployment, the application will be fully functional with:
+
+- **Professional Modern UI**: Complete redesign with modern design system
+- **Full Authentication**: Sign up and sign in functionality
+- **Responsive Design**: Works on desktop, tablet, and mobile devices
+- **Production Builds**: Optimized builds for production deployment
+
+**Testing Checklist**:
+- [ ] Navigate to the deployed Amplify URL
+- [ ] Click "Create Account" and sign up with email
+- [ ] Check email for verification code and complete signup
+- [ ] Sign in with your new account
+- [ ] Test all navigation links (Dashboard, Audit Control, Findings, Reports)
+- [ ] Verify responsive design on mobile devices
+- [ ] Test user menu and sign out functionality
+
+### 3. Set Up Frontend (Development)
 
 ```bash
 cd frontend

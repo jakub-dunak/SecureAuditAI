@@ -1,15 +1,37 @@
 import React from 'react';
+import { cn } from '../../utils/cn';
 
 interface CardProps {
   children: React.ReactNode;
   className?: string;
+  hover?: boolean;
+  padding?: 'none' | 'sm' | 'md' | 'lg';
 }
 
-export const Card: React.FC<CardProps> = ({ children, className = '' }) => (
-  <div className={`bg-white rounded-lg shadow ${className}`}>
-    {children}
-  </div>
-);
+export const Card: React.FC<CardProps> = ({
+  children,
+  className = '',
+  hover = false,
+  padding = 'md'
+}) => {
+  const paddingClasses = {
+    none: '',
+    sm: 'p-4',
+    md: 'p-6',
+    lg: 'p-8'
+  };
+
+  return (
+    <div className={cn(
+      'card',
+      paddingClasses[padding],
+      hover && 'hover:shadow-medium cursor-pointer',
+      className
+    )}>
+      {children}
+    </div>
+  );
+};
 
 interface CardHeaderProps {
   children: React.ReactNode;
@@ -17,7 +39,7 @@ interface CardHeaderProps {
 }
 
 export const CardHeader: React.FC<CardHeaderProps> = ({ children, className = '' }) => (
-  <div className={`px-6 py-4 border-b border-gray-200 ${className}`}>
+  <div className={cn('pb-4 mb-4 border-b border-neutral-200', className)}>
     {children}
   </div>
 );
@@ -25,13 +47,21 @@ export const CardHeader: React.FC<CardHeaderProps> = ({ children, className = ''
 interface CardTitleProps {
   children: React.ReactNode;
   className?: string;
+  level?: 1 | 2 | 3 | 4 | 5 | 6;
 }
 
-export const CardTitle: React.FC<CardTitleProps> = ({ children, className = '' }) => (
-  <h3 className={`text-lg font-medium text-gray-900 ${className}`}>
-    {children}
-  </h3>
-);
+export const CardTitle: React.FC<CardTitleProps> = ({
+  children,
+  className = '',
+  level = 3
+}) => {
+  const Component = `h${level}` as keyof JSX.IntrinsicElements;
+  return (
+    <Component className={cn('font-semibold text-neutral-900 mb-2', className)}>
+      {children}
+    </Component>
+  );
+};
 
 interface CardDescriptionProps {
   children: React.ReactNode;
@@ -39,7 +69,7 @@ interface CardDescriptionProps {
 }
 
 export const CardDescription: React.FC<CardDescriptionProps> = ({ children, className = '' }) => (
-  <p className={`mt-1 text-sm text-gray-600 ${className}`}>
+  <p className={cn('text-neutral-600 text-sm leading-relaxed', className)}>
     {children}
   </p>
 );
@@ -50,7 +80,18 @@ interface CardContentProps {
 }
 
 export const CardContent: React.FC<CardContentProps> = ({ children, className = '' }) => (
-  <div className={`px-6 py-4 ${className}`}>
+  <div className={cn('', className)}>
+    {children}
+  </div>
+);
+
+interface CardFooterProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export const CardFooter: React.FC<CardFooterProps> = ({ children, className = '' }) => (
+  <div className={cn('pt-4 mt-4 border-t border-neutral-200 flex items-center justify-between', className)}>
     {children}
   </div>
 );

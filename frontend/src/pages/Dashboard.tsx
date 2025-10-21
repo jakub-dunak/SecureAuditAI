@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Badge } from '../components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../components/ui/card';
+import { Badge, StatusBadge, SecurityBadge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 
 interface ComplianceMetric {
@@ -88,33 +88,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'PASS':
-        return 'bg-green-100 text-green-800';
-      case 'FAIL':
-        return 'bg-red-100 text-red-800';
-      case 'WARNING':
-        return 'bg-yellow-100 text-yellow-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'CRITICAL':
-        return 'bg-red-100 text-red-800';
-      case 'HIGH':
-        return 'bg-orange-100 text-orange-800';
-      case 'MEDIUM':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'LOW':
-        return 'bg-blue-100 text-blue-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
 
   const getTrendIcon = (trend: string) => {
     switch (trend) {
@@ -129,19 +102,27 @@ const Dashboard: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
+      <div className="page-container">
+        <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+          <div className="loading-spinner w-12 h-12"></div>
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-neutral-900 mb-2">
+              Loading Dashboard...
+            </h3>
+            <p className="text-neutral-600">
+              Fetching your compliance data
+            </p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Compliance Dashboard</h1>
-        <p className="mt-2 text-gray-600">
+    <div className="page-container">
+      <div className="page-header">
+        <h1 className="page-title">Compliance Dashboard</h1>
+        <p className="page-subtitle">
           Overview of your organization's compliance posture across all frameworks
         </p>
       </div>
@@ -154,14 +135,35 @@ const Dashboard: React.FC = () => {
             <CardDescription>Start a new audit or view detailed reports</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex space-x-4">
-              <Button className="bg-indigo-600 hover:bg-indigo-700">
+            <div className="flex flex-wrap gap-3">
+              <Button
+                icon={
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                }
+              >
                 Start New Audit
               </Button>
-              <Button variant="outline">
+              <Button
+                variant="secondary"
+                icon={
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                }
+              >
                 View Latest Report
               </Button>
-              <Button variant="outline">
+              <Button
+                variant="outline"
+                icon={
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                }
+              >
                 Configure Scan Settings
               </Button>
             </div>
@@ -169,7 +171,7 @@ const Dashboard: React.FC = () => {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid-dashboard">
         {/* Compliance Scores */}
         <Card>
           <CardHeader>
@@ -179,16 +181,16 @@ const Dashboard: React.FC = () => {
           <CardContent>
             <div className="space-y-4">
               {complianceMetrics.map((metric) => (
-                <div key={metric.framework} className="flex items-center justify-between">
+                <div key={metric.framework} className="flex items-center justify-between p-3 bg-neutral-50 rounded-lg">
                   <div className="flex items-center space-x-3">
-                    <div className="text-sm font-medium">{metric.framework}</div>
-                    <Badge className={getStatusColor(metric.status)}>
+                    <div className="text-sm font-medium text-neutral-900">{metric.framework}</div>
+                    <StatusBadge status={metric.status.toLowerCase() as any}>
                       {metric.status}
-                    </Badge>
+                    </StatusBadge>
                   </div>
                   <div className="text-right">
-                    <div className="text-2xl font-bold">{metric.score}%</div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-2xl font-bold text-neutral-900">{metric.score}%</div>
+                    <div className="text-xs text-neutral-500">
                       Last: {new Date(metric.lastScan).toLocaleDateString()}
                     </div>
                   </div>
@@ -207,18 +209,18 @@ const Dashboard: React.FC = () => {
           <CardContent>
             <div className="space-y-4">
               {findingSummary.map((finding) => (
-                <div key={finding.severity} className="flex items-center justify-between">
+                <div key={finding.severity} className="flex items-center justify-between p-3 bg-neutral-50 rounded-lg">
                   <div className="flex items-center space-x-3">
-                    <Badge className={getSeverityColor(finding.severity)}>
+                    <SecurityBadge severity={finding.severity.toLowerCase() as any}>
                       {finding.severity}
-                    </Badge>
-                    <span className="text-sm text-gray-600">
+                    </SecurityBadge>
+                    <span className="text-sm text-neutral-600 font-medium">
                       {finding.count} findings
                     </span>
                   </div>
-                  <div className="text-right">
+                  <div className="flex items-center space-x-2">
                     <span className="text-lg">{getTrendIcon(finding.trend)}</span>
-                    <div className="text-xs text-gray-500">vs last scan</div>
+                    <div className="text-xs text-neutral-500">vs last scan</div>
                   </div>
                 </div>
               ))}
@@ -233,30 +235,24 @@ const Dashboard: React.FC = () => {
             <CardDescription>Latest compliance audit results</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {recentAudits.map((audit) => (
-                <div key={audit.auditRunId} className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-medium">{audit.auditRunId}</div>
-                    <div className="text-xs text-gray-500">
+                <div key={audit.auditRunId} className="flex items-center justify-between p-3 bg-neutral-50 rounded-lg">
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-neutral-900">{audit.auditRunId}</div>
+                    <div className="text-xs text-neutral-500">
                       {new Date(audit.createdAt).toLocaleDateString()}
                     </div>
                   </div>
                   <div className="text-right">
-                    <Badge
-                      className={
-                        audit.status === 'COMPLETED'
-                          ? 'bg-green-100 text-green-800'
-                          : audit.status === 'RUNNING'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }
-                    >
-                      {audit.status}
-                    </Badge>
+                    <div className="mb-1">
+                      <StatusBadge status={audit.status.toLowerCase() as any}>
+                        {audit.status}
+                      </StatusBadge>
+                    </div>
                     {audit.status === 'COMPLETED' && (
-                      <div className="text-xs text-gray-500 mt-1">
-                        {audit.findingsCount} findings
+                      <div className="text-xs text-neutral-500">
+                        {audit.findingsCount} findings • {audit.complianceScore.toFixed(1)}% score
                       </div>
                     )}
                   </div>
@@ -269,22 +265,42 @@ const Dashboard: React.FC = () => {
 
       {/* Overall Compliance Score */}
       <div className="mt-8">
-        <Card>
-          <CardHeader>
-            <CardTitle>Overall Compliance Score</CardTitle>
-            <CardDescription>
+        <Card className="bg-gradient-to-br from-primary-50 to-primary-100 border-primary-200">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">Overall Compliance Score</CardTitle>
+            <CardDescription className="text-base">
               Weighted average across all compliance frameworks
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-center">
               <div className="text-center">
-                <div className="text-6xl font-bold text-indigo-600 mb-2">
-                  {Math.round(complianceMetrics.reduce((sum, metric) => sum + metric.score, 0) / complianceMetrics.length)}%
+                <div className="relative">
+                  <div className="text-7xl font-bold text-primary-600 mb-2">
+                    {Math.round(complianceMetrics.reduce((sum, metric) => sum + metric.score, 0) / complianceMetrics.length)}%
+                  </div>
+                  <div className="absolute -top-2 -right-2">
+                    <div className="w-6 h-6 bg-success-500 rounded-full flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-gray-600">Overall Compliance</div>
-                <div className="mt-4 text-sm text-gray-500">
-                  Based on {complianceMetrics.length} frameworks • Last updated: {new Date().toLocaleDateString()}
+                <div className="text-lg text-neutral-700 font-medium mb-4">Overall Compliance</div>
+                <div className="flex items-center justify-center space-x-6 text-sm text-neutral-600">
+                  <div className="flex items-center space-x-1">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{complianceMetrics.length} frameworks</span>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Last updated: {new Date().toLocaleDateString()}</span>
+                  </div>
                 </div>
               </div>
             </div>
