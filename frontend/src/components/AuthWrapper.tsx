@@ -66,7 +66,7 @@ interface AuthWrapperProps {
 }
 
 // Custom sign-in form component
-const CustomSignIn: React.FC = () => {
+const CustomSignIn = () => {
   return (
     <View className="space-y-6">
       <div className="text-center space-y-2">
@@ -87,7 +87,7 @@ const CustomSignIn: React.FC = () => {
 };
 
 // Custom sign-up form component
-const CustomSignUp: React.FC = () => {
+const CustomSignUp = () => {
   return (
     <View className="space-y-6">
       <div className="text-center space-y-2">
