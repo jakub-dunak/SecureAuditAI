@@ -249,7 +249,6 @@ jobs:
             frontend-deps-
 
       - name: Install frontend dependencies
-        if: steps.frontend-deps-cache.outputs.cache-hit != 'true'
         run: |
           cd frontend
           npm ci
