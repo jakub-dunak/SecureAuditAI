@@ -33,6 +33,28 @@ const Findings: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const applyFilters = () => {
+      let filtered = [...findings];
+
+      if (filters.severity) {
+        filtered = filtered.filter(f => f.severity === filters.severity);
+      }
+
+      if (filters.resourceType) {
+        filtered = filtered.filter(f => f.resourceType === filters.resourceType);
+      }
+
+      if (filters.status) {
+        filtered = filtered.filter(f => f.status === filters.status);
+      }
+
+      if (filters.framework) {
+        filtered = filtered.filter(f => f.complianceFrameworks.includes(filters.framework));
+      }
+
+      setFilteredFindings(filtered);
+    };
+
     applyFilters();
   }, [findings, filters]);
 
@@ -136,28 +158,6 @@ const Findings: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const applyFilters = () => {
-    let filtered = [...findings];
-
-    if (filters.severity) {
-      filtered = filtered.filter(f => f.severity === filters.severity);
-    }
-
-    if (filters.resourceType) {
-      filtered = filtered.filter(f => f.resourceType === filters.resourceType);
-    }
-
-    if (filters.status) {
-      filtered = filtered.filter(f => f.status === filters.status);
-    }
-
-    if (filters.framework) {
-      filtered = filtered.filter(f => f.complianceFrameworks.includes(filters.framework));
-    }
-
-    setFilteredFindings(filtered);
   };
 
   const getSeverityColor = (severity: string) => {

@@ -14,7 +14,7 @@ class ComplianceAnalyzer:
 
     def __init__(self):
         self.bedrock_runtime = boto3.client('bedrock-runtime')
-        self.model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        self.model_id = "amazon.titan-text-premier-v1:0"
 
     async def analyze_compliance(self, framework: str, resources: List[Dict], scan_config: Dict) -> List[Dict]:
         """
@@ -51,21 +51,19 @@ class ComplianceAnalyzer:
                 contentType="application/json",
                 accept="application/json",
                 body=json.dumps({
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 2000,
-                    "temperature": 0.1,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ]
+                    "inputText": prompt,
+                    "textGenerationConfig": {
+                        "maxTokenCount": 2000,
+                        "temperature": 0.1,
+                        "topP": 0.9
+                    }
                 })
             )
 
             # Parse response
             response_body = json.loads(response['body'].read())
-            analysis_result = json.loads(response_body['content'][0]['text'])
+            # For Titan models, the response is directly in the results array
+            analysis_result = json.loads(response_body['results'][0]['outputText'])
 
             # Convert analysis result to findings format
             findings = self._parse_analysis_result(framework, resource, analysis_result)

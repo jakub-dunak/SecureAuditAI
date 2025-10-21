@@ -1,5 +1,6 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
+import { Authenticator, useAuthenticator } from '@aws-amplify/ui-react';
 
 // Check if we have valid Cognito configuration for authentication
 const hasValidCognitoConfig = process.env.REACT_APP_USER_POOL_ID && process.env.REACT_APP_USER_POOL_CLIENT_ID;
@@ -10,8 +11,7 @@ interface AuthWrapperProps {
 
 // Component that handles authentication when Cognito is configured
 const AuthenticatedWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
-  const { useAuthenticator, Authenticator } = require('@aws-amplify/ui-react');
-  const { authStatus } = useAuthenticator((context: any) => [context.authStatus]);
+  const { authStatus } = useAuthenticator((context) => [context.authStatus]);
 
   // Show loading while checking authentication status
   if (authStatus === 'configuring') {
@@ -40,8 +40,8 @@ const AuthenticatedWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
     return <>{children}</>;
   }
 
-  // Default fallback
-  return <Navigate to="/login" replace />;
+  // Default fallback (should not be reached in normal flow)
+  return <Navigate to="/dashboard" replace />;
 };
 
 // Main wrapper component

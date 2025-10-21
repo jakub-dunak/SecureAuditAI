@@ -13,7 +13,7 @@ SecureAuditAI Agent is a comprehensive, serverless cybersecurity compliance audi
 - **High availability** without infrastructure management
 
 ### AI-Powered Intelligence
-- **Amazon Bedrock Claude 3.5 Sonnet** for compliance reasoning
+- **Amazon Bedrock Titan Text Premier** for compliance reasoning
 - **Bedrock AgentCore Runtime** for enterprise-grade agent orchestration
 - **Contextual memory** for improved analysis over time
 - **Multi-framework compliance** understanding
@@ -84,7 +84,7 @@ SecureAuditAI Agent is a comprehensive, serverless cybersecurity compliance audi
 │                      AI Layer                                   │
 ├─────────────────────────────────────────────────────────────────┤
 │  Amazon Bedrock AgentCore Runtime                               │
-│  - Claude 3.5 Sonnet foundation model                           │
+│  - Titan Text Premier foundation model                         │
 │  - Multi-turn conversation memory                               │
 │  - Action group orchestration                                   │
 │  - Compliance reasoning engine                                  │

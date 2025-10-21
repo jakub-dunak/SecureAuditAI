@@ -32,8 +32,6 @@ function App() {
               <Route path="/audit-control" element={<AuditControl />} />
               <Route path="/findings" element={<Findings />} />
               <Route path="/reports" element={<Reports />} />
-              {/* Login route is handled by AuthWrapper when unauthenticated */}
-              <Route path="/login" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
         </div>

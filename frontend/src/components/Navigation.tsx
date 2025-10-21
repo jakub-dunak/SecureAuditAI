@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuthenticator } from '@aws-amplify/ui-react';
 
 // Check if we have valid Cognito configuration for authentication
 const hasValidCognitoConfig = process.env.REACT_APP_USER_POOL_ID && process.env.REACT_APP_USER_POOL_CLIENT_ID;
@@ -7,7 +8,6 @@ const hasValidCognitoConfig = process.env.REACT_APP_USER_POOL_ID && process.env.
 // Navigation component for when authentication is available
 const AuthenticatedNavigation: React.FC = () => {
   const location = useLocation();
-  const { useAuthenticator } = require('@aws-amplify/ui-react');
   const { signOut, user } = useAuthenticator();
 
   const navItems = [

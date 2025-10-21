@@ -15,7 +15,7 @@ interface ScanConfiguration {
 const AuditControl: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanTime, setLastScanTime] = useState<string>('2024-01-15T10:30:00Z');
-  const [scanHistory, setScanHistory] = useState([
+  const [scanHistory] = useState([
     {
       id: 'scan-001',
       status: 'COMPLETED',

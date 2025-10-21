@@ -146,7 +146,7 @@ aws cloudformation create-stack \
   --template-body file://cloudformation/template.yaml \
   --parameters \
     ParameterKey=Environment,ParameterValue=dev \
-    ParameterKey=BedrockModelId,ParameterValue=anthropic.claude-3-5-sonnet-20241022-v2:0 \
+    ParameterKey=BedrockModelId,ParameterValue=amazon.titan-text-premier-v1:0 \
     ParameterKey=CognitoDomainPrefix,ParameterValue="your-validated-unique-domain"
 
 # Wait for stack creation to complete
@@ -194,7 +194,7 @@ response = agentcore_client.create_agent_runtime(
     executionRoleArn='<AGENTCORE_EXECUTION_ROLE_ARN>',  # From CloudFormation
     environmentVariables={
         'ENVIRONMENT': 'dev',
-        'BEDROCK_MODEL_ID': 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+        'BEDROCK_MODEL_ID': 'amazon.titan-text-premier-v1:0'
     }
 )
 ```

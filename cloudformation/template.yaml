@@ -14,7 +14,7 @@ Parameters:
 
   BedrockModelId:
     Type: String
-    Default: anthropic.claude-3-5-sonnet-20241022-v2:0
+    Default: amazon.titan-text-premier-v1:0
     Description: Bedrock model ID for compliance analysis
 
 
@@ -78,6 +78,12 @@ Resources:
       EnvironmentVariables:
         - Name: _LIVE_UPDATES
           Value: '[{"name":"Amplify Hosting","pkg":"@aws-amplify/cli","type":"npm","version":"latest"}]'
+        - Name: REACT_APP_USER_POOL_ID
+          Value: !Ref UserPool
+        - Name: REACT_APP_USER_POOL_CLIENT_ID
+          Value: !Ref UserPoolClient
+        - Name: REACT_APP_AWS_REGION
+          Value: !Ref AWS::Region
       CustomRules:
         - Source: '</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp)$)([^.]+$)/>'
           Target: '/index.html'

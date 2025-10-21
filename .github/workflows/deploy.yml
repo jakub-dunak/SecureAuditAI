@@ -15,11 +15,10 @@ on:
         options:
           - dev
           - prod
+          - cleanup
 
 env:
   AWS_REGION: us-west-2
-  AWS_DEFAULT_REGION: us-west-2
-  PYTHON_VERSION: '3.11'
   NODE_VERSION: '18'
 
 jobs:
@@ -27,6 +26,7 @@ jobs:
   validate:
     name: Validate Infrastructure
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,29 +38,25 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Validate CloudFormation template
-        run: |
-          echo "🔍 Validating CloudFormation template..."
-          aws cloudformation validate-template --template-body file://cloudformation/template.yaml
-          echo "✅ Template validation passed"
+        run: aws cloudformation validate-template --template-body file://cloudformation/template.yaml
 
       - name: Validate Lambda packages exist
         run: |
-          echo "🔍 Checking Lambda source files..."
-          [ -f "lambda/trigger_scan.py" ] && echo "✅ trigger_scan.py found" || (echo "❌ trigger_scan.py missing" && exit 1)
-          [ -f "lambda/api_audit_runs.py" ] && echo "✅ api_audit_runs.py found" || (echo "❌ api_audit_runs.py missing" && exit 1)
-          [ -f "lambda/api_findings.py" ] && echo "✅ api_findings.py found" || (echo "❌ api_findings.py missing" && exit 1)
-          echo "✅ All Lambda source files present"
+          [ -f "lambda/trigger_scan.py" ] || (echo "❌ trigger_scan.py missing" && exit 1)
+          [ -f "lambda/api_audit_runs.py" ] || (echo "❌ api_audit_runs.py missing" && exit 1)
+          [ -f "lambda/api_findings.py" ] || (echo "❌ api_findings.py missing" && exit 1)
 
-  # Deploy to Development
-  deploy-dev:
-    name: Deploy to Development
+  # Deploy to Environment
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment }}
     runs-on: ubuntu-latest
     needs: validate
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
-    environment: dev
+    if: github.event.inputs.environment != 'cleanup'
+    environment: ${{ github.event.inputs.environment }}
     concurrency:
-      group: deploy-dev-${{ github.ref }}
+      group: deploy-${{ github.event.inputs.environment }}-${{ github.ref }}
       cancel-in-progress: false
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -71,335 +67,147 @@ jobs:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/personal-github-oidc-role
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Generate deterministic Cognito domain prefix
-        id: generate-domain
+      - name: Setup AWS CLI
         run: |
-          echo "🔄 Generating deterministic Cognito domain prefix..."
-          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          # AWS CLI is already configured via OIDC, no additional setup needed
+          aws --version
 
-          DETERMINISTIC_SUFFIX="${ACCOUNT_ID: -8}"
-          DETERMINISTIC_SUFFIX=$(echo "$DETERMINISTIC_SUFFIX" | tr -cd 'a-z0-9')
-          COGNITO_PREFIX="secureauditai-${ENVIRONMENT}-${DETERMINISTIC_SUFFIX}"
-
-          if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
-            echo "❌ Invalid domain format: $COGNITO_PREFIX"
-            exit 1
-          fi
-
-          echo "✅ Generated domain: ${COGNITO_PREFIX}"
-          echo "COGNITO_DOMAIN=${COGNITO_PREFIX}" >> $GITHUB_OUTPUT
-
-      - name: Setup S3 bucket for deployment artifacts
-        run: |
-          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-          BUCKET_NAME="secureauditai-deployment-us-west-2-${ENVIRONMENT}"
-          echo "DEPLOYMENT_BUCKET=${BUCKET_NAME}" >> $GITHUB_ENV
-
-          # Check if bucket exists
-          if aws s3 ls s3://${BUCKET_NAME} --region us-west-2 2>/dev/null; then
-            echo "✅ Using existing deployment bucket: ${BUCKET_NAME}"
-          else
-            echo "📦 Creating new deployment bucket: ${BUCKET_NAME}"
-            if aws s3 mb s3://${BUCKET_NAME} --region us-west-2; then
-              echo "✅ Created deployment bucket: ${BUCKET_NAME}"
-            else
-              echo "❌ Failed to create deployment bucket"
-              exit 1
-            fi
-          fi
-
-      - name: Package CloudFormation template
-        run: |
-          echo "📦 Packaging CloudFormation template..."
-          aws cloudformation package \
-            --template-file cloudformation/template.yaml \
-            --s3-bucket ${{ env.DEPLOYMENT_BUCKET }} \
-            --output-template-file packaged-template.yaml \
-            --region us-west-2
-
-      - name: Package Lambda functions
-        run: |
-          echo "📦 Packaging Lambda functions..."
-          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-
-          # Package Lambda functions
-          cd lambda
-          zip -r trigger_scan.zip trigger_scan.py
-          zip -r api_audit_runs.zip api_audit_runs.py
-          zip -r api_findings.zip api_findings.py
-
-          # Verify files exist in lambda directory
-          ls -la *.zip
-
-          # Upload Lambda packages to S3 from lambda directory
-          aws s3 cp trigger_scan.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/trigger_scan.zip --region us-west-2
-          aws s3 cp api_audit_runs.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_audit_runs.zip --region us-west-2
-          aws s3 cp api_findings.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_findings.zip --region us-west-2
-
-          cd ..
-
-          echo "✅ Lambda functions packaged and uploaded"
-
-      - name: Deploy CloudFormation stack
-        run: |
-          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
-          BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
-
-          if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
-            echo "Updating existing stack..."
-            
-            # Try to update the stack, ignore "No updates" error
-            UPDATE_OUTPUT=$(aws cloudformation update-stack \
-              --stack-name "$STACK_NAME" \
-              --template-body file://packaged-template.yaml \
-              --parameters \
-                ParameterKey=Environment,ParameterValue="$ENVIRONMENT" \
-                ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
-                ParameterKey=LambdaCodeBucketName,ParameterValue="${{ env.DEPLOYMENT_BUCKET }}" \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --region ${{ env.AWS_REGION }} 2>&1) || true
-
-            if echo "$UPDATE_OUTPUT" | grep -q "No updates are to be performed"; then
-              echo "✅ No updates needed - stack is already up to date"
-            elif echo "$UPDATE_OUTPUT" | grep -q "StackId"; then
-              echo "✅ Stack update initiated"
-              aws cloudformation wait stack-update-complete \
-                --stack-name "$STACK_NAME" \
-                --region ${{ env.AWS_REGION }}
-              echo "✅ Stack update completed"
-            else
-              echo "❌ Stack update failed: $UPDATE_OUTPUT"
-              exit 1
-            fi
-          else
-            echo "Creating new stack..."
-            aws cloudformation create-stack \
-              --stack-name "$STACK_NAME" \
-              --template-body file://packaged-template.yaml \
-              --parameters \
-                ParameterKey=Environment,ParameterValue="$ENVIRONMENT" \
-                ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
-                ParameterKey=LambdaCodeBucketName,ParameterValue="${{ env.DEPLOYMENT_BUCKET }}" \
-              --capabilities CAPABILITY_NAMED_IAM \
-              --region ${{ env.AWS_REGION }}
-
-            aws cloudformation wait stack-create-complete \
-              --stack-name "$STACK_NAME" \
-              --region ${{ env.AWS_REGION }}
-            echo "✅ Stack creation completed"
-          fi
-
-      - name: Create Cognito domain
-        run: |
-          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-          COGNITO_DOMAIN="${{ steps.generate-domain.outputs.COGNITO_DOMAIN }}"
-          USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "secureauditai-agent-${ENVIRONMENT}" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-
-          if aws cognito-idp describe-user-pool-domain --domain "$COGNITO_DOMAIN" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-            echo "✅ Domain $COGNITO_DOMAIN already exists"
-          else
-            echo "📝 Creating domain: $COGNITO_DOMAIN"
-            aws cognito-idp create-user-pool-domain \
-              --domain "$COGNITO_DOMAIN" \
-              --user-pool-id "$USER_POOL_ID" \
-              --region ${{ env.AWS_REGION }}
-            echo "✅ Domain $COGNITO_DOMAIN created"
-          fi
-
-      - name: Setup Node.js
+      - name: Setup Node.js with caching
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies
-        run: |
-          cd frontend
-          npm ci
-        env:
-          CI: false
-
-      - name: Deploy React frontend
-        env:
-          CI: false
-        run: |
-          ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
-          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
-
-          # Get CloudFormation outputs
-          USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-          USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-          AMPLIFY_APP_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-          AMPLIFY_APP_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppUrl`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-
-          cd frontend
-
-          # Configure frontend with CloudFormation outputs
-          node ../scripts/configure-frontend.js "$USER_POOL_ID" "$USER_POOL_CLIENT_ID" "${{ env.AWS_REGION }}"
-
-          # Build frontend
-          echo "🔨 Building React application..."
-          npm run build
-          
-          # Create a deployment package
-          echo "📦 Creating deployment package..."
-          cd build
-          zip -r ../amplify-deployment.zip .
-          cd ..
-          
-          # Deploy to Amplify
-          echo "🚀 Deploying to AWS Amplify..."
-          
-          # Create deployment
-          DEPLOYMENT_OUTPUT=$(aws amplify create-deployment \
-            --app-id "$AMPLIFY_APP_ID" \
-            --branch-name "$ENVIRONMENT" \
-            --region ${{ env.AWS_REGION }} \
-            --output json)
-          
-          UPLOAD_URL=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.zipUploadUrl')
-          JOB_ID=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.jobId')
-          
-          echo "📤 Uploading build artifacts (Job ID: $JOB_ID)..."
-          
-          # Upload the zip file to the pre-signed URL
-          curl -X PUT "$UPLOAD_URL" \
-            -H "Content-Type: application/zip" \
-            --data-binary @amplify-deployment.zip
-          
-          # Start the deployment
-          echo "🚀 Starting deployment..."
-          aws amplify start-deployment \
-            --app-id "$AMPLIFY_APP_ID" \
-            --branch-name "$ENVIRONMENT" \
-            --job-id "$JOB_ID" \
-            --region ${{ env.AWS_REGION }}
-          
-          echo "✅ Frontend deployment initiated!"
-          echo "🌐 Application URL: ${AMPLIFY_APP_URL}"
-          echo "📊 Monitor deployment: https://console.aws.amazon.com/amplify/home?region=${{ env.AWS_REGION }}#/${AMPLIFY_APP_ID}/${ENVIRONMENT}/${JOB_ID}"
-
-  # Deploy to Production (Manual with Approval)
-  deploy-prod:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: deploy-dev
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
-    environment: prod
-    concurrency:
-      group: deploy-prod
-      cancel-in-progress: false
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Cache CloudFormation validation
+        uses: actions/cache@v3
+        id: cf-validate-cache
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/personal-github-oidc-role
-          aws-region: ${{ env.AWS_REGION }}
+          path: .cf-validation
+          key: cf-validation-${{ hashFiles('cloudformation/template.yaml') }}
+
+      - name: Validate CloudFormation template (cached)
+        if: steps.cf-validate-cache.outputs.cache-hit != 'true'
+        run: |
+          aws cloudformation validate-template --template-body file://cloudformation/template.yaml
+          touch .cf-validation
 
       - name: Generate deterministic Cognito domain prefix
-        id: generate-domain-prod
+        id: generate-domain
         run: |
-          echo "🔄 Generating deterministic Cognito domain prefix..."
-          ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-          DETERMINISTIC_SUFFIX="${ACCOUNT_ID: -8}"
-          DETERMINISTIC_SUFFIX=$(echo "$DETERMINISTIC_SUFFIX" | tr -cd 'a-z0-9')
-          COGNITO_PREFIX="secureauditai-${ENVIRONMENT}-${DETERMINISTIC_SUFFIX}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          SUFFIX=$(aws sts get-caller-identity --query Account --output text | tail -c 9 | tr -cd 'a-z0-9')
+          COGNITO_PREFIX="secureauditai-${ENVIRONMENT}-${SUFFIX}"
 
           if [[ ! "$COGNITO_PREFIX" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || [[ ${#COGNITO_PREFIX} -lt 1 ]] || [[ ${#COGNITO_PREFIX} -gt 63 ]]; then
             echo "❌ Invalid domain format: $COGNITO_PREFIX"
             exit 1
           fi
 
-          echo "✅ Generated domain: ${COGNITO_PREFIX}"
           echo "COGNITO_DOMAIN=${COGNITO_PREFIX}" >> $GITHUB_OUTPUT
 
       - name: Setup S3 bucket for deployment artifacts
         run: |
-          ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
           BUCKET_NAME="secureauditai-deployment-us-west-2-${ENVIRONMENT}"
           echo "DEPLOYMENT_BUCKET=${BUCKET_NAME}" >> $GITHUB_ENV
 
-          # Check if bucket exists
-          if aws s3 ls s3://${BUCKET_NAME} --region us-west-2 2>/dev/null; then
-            echo "✅ Using existing deployment bucket: ${BUCKET_NAME}"
+          # Check if bucket exists, create if not
+          if ! aws s3 ls s3://${BUCKET_NAME} --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            aws s3 mb s3://${BUCKET_NAME} --region ${{ env.AWS_REGION }} || (echo "❌ Failed to create deployment bucket" && exit 1)
+            echo "✅ Created deployment bucket: ${BUCKET_NAME}"
           else
-            echo "📦 Creating new deployment bucket: ${BUCKET_NAME}"
-            if aws s3 mb s3://${BUCKET_NAME} --region us-west-2; then
-              echo "✅ Created deployment bucket: ${BUCKET_NAME}"
-            else
-              echo "❌ Failed to create deployment bucket"
-              exit 1
-            fi
+            echo "✅ Using existing deployment bucket: ${BUCKET_NAME}"
           fi
 
       - name: Package CloudFormation template
-        run: |
-          echo "📦 Packaging CloudFormation template..."
-          aws cloudformation package \
+        run: aws cloudformation package \
             --template-file cloudformation/template.yaml \
             --s3-bucket ${{ env.DEPLOYMENT_BUCKET }} \
             --output-template-file packaged-template.yaml \
-            --region us-west-2
+            --region ${{ env.AWS_REGION }}
 
-      - name: Package Lambda functions
+      - name: Cache Lambda packages
+        uses: actions/cache@v3
+        id: lambda-cache
+        with:
+          path: |
+            lambda/*.zip
+          key: lambda-packages-${{ hashFiles('lambda/*.py') }}-${{ github.event.inputs.environment }}
+
+      - name: Package Lambda functions (cached)
+        if: steps.lambda-cache.outputs.cache-hit != 'true'
         run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
           echo "📦 Packaging Lambda functions..."
-          ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
 
-          # Package Lambda functions
           cd lambda
-          zip -r trigger_scan-${ENVIRONMENT}.zip trigger_scan.py
-          zip -r api_audit_runs-${ENVIRONMENT}.zip api_audit_runs.py
-          zip -r api_findings-${ENVIRONMENT}.zip api_findings.py
-          cd ..
 
-          # Verify files exist
-          ls -la *-*.zip
+          # Package Lambda functions with environment suffix for prod
+          if [ "$ENVIRONMENT" = "prod" ]; then
+            zip -r trigger_scan-${ENVIRONMENT}.zip trigger_scan.py
+            zip -r api_audit_runs-${ENVIRONMENT}.zip api_audit_runs.py
+            zip -r api_findings-${ENVIRONMENT}.zip api_findings.py
+          else
+            zip -r trigger_scan.zip trigger_scan.py
+            zip -r api_audit_runs.zip api_audit_runs.py
+            zip -r api_findings.zip api_findings.py
+          fi
 
-          # Upload Lambda packages to S3
-          aws s3 cp trigger_scan-${ENVIRONMENT}.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/trigger_scan-${ENVIRONMENT}.zip --region us-west-2
-          aws s3 cp api_audit_runs-${ENVIRONMENT}.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_audit_runs-${ENVIRONMENT}.zip --region us-west-2
-          aws s3 cp api_findings-${ENVIRONMENT}.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_findings-${ENVIRONMENT}.zip --region us-west-2
+      - name: Upload Lambda packages to S3
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          cd lambda
 
-          echo "✅ Lambda functions packaged and uploaded"
+          if [ "$ENVIRONMENT" = "prod" ]; then
+            aws s3 cp trigger_scan-${ENVIRONMENT}.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/trigger_scan-${ENVIRONMENT}.zip --region ${{ env.AWS_REGION }}
+            aws s3 cp api_audit_runs-${ENVIRONMENT}.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_audit_runs-${ENVIRONMENT}.zip --region ${{ env.AWS_REGION }}
+            aws s3 cp api_findings-${ENVIRONMENT}.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_findings-${ENVIRONMENT}.zip --region ${{ env.AWS_REGION }}
+          else
+            aws s3 cp trigger_scan.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/trigger_scan.zip --region ${{ env.AWS_REGION }}
+            aws s3 cp api_audit_runs.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_audit_runs.zip --region ${{ env.AWS_REGION }}
+            aws s3 cp api_findings.zip s3://${{ env.DEPLOYMENT_BUCKET }}/lambda/api_findings.zip --region ${{ env.AWS_REGION }}
+          fi
 
       - name: Deploy CloudFormation stack
+        id: deploy-stack
         run: |
-          ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
-          BEDROCK_MODEL_ID="${{ secrets.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0' }}"
 
           if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
-            echo "Updating existing stack..."
-            aws cloudformation update-stack \
+            echo "🔄 Updating existing stack: $STACK_NAME"
+
+            if aws cloudformation update-stack \
               --stack-name "$STACK_NAME" \
               --template-body file://packaged-template.yaml \
               --parameters \
                 ParameterKey=Environment,ParameterValue="$ENVIRONMENT" \
-                ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
+                ParameterKey=BedrockModelId,ParameterValue="${{ secrets.BEDROCK_MODEL_ID || 'amazon.titan-text-premier-v1:0' }}" \
                 ParameterKey=LambdaCodeBucketName,ParameterValue="${{ env.DEPLOYMENT_BUCKET }}" \
               --capabilities CAPABILITY_NAMED_IAM \
-              --region ${{ env.AWS_REGION }}
+              --region ${{ env.AWS_REGION }} &> /dev/null; then
 
-            aws cloudformation wait stack-update-complete \
-              --stack-name "$STACK_NAME" \
-              --region ${{ env.AWS_REGION }}
+              aws cloudformation wait stack-update-complete \
+                --stack-name "$STACK_NAME" \
+                --region ${{ env.AWS_REGION }}
+
+              echo "✅ Stack update completed"
+            else
+              echo "❌ Stack update failed - attempting rollback"
+              # Attempt rollback on failure
+              aws cloudformation cancel-update-stack --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} || true
+              exit 1
+            fi
           else
-            echo "Creating new stack..."
+            echo "📦 Creating new stack: $STACK_NAME"
+
             aws cloudformation create-stack \
               --stack-name "$STACK_NAME" \
               --template-body file://packaged-template.yaml \
               --parameters \
                 ParameterKey=Environment,ParameterValue="$ENVIRONMENT" \
-                ParameterKey=BedrockModelId,ParameterValue="$BEDROCK_MODEL_ID" \
+                ParameterKey=BedrockModelId,ParameterValue="${{ secrets.BEDROCK_MODEL_ID || 'amazon.titan-text-premier-v1:0' }}" \
                 ParameterKey=LambdaCodeBucketName,ParameterValue="${{ env.DEPLOYMENT_BUCKET }}" \
               --capabilities CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
@@ -407,13 +215,30 @@ jobs:
             aws cloudformation wait stack-create-complete \
               --stack-name "$STACK_NAME" \
               --region ${{ env.AWS_REGION }}
+
+            echo "✅ Stack creation completed"
           fi
+
+      - name: Get CloudFormation outputs
+        id: cf-outputs
+        run: |
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
+
+          USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          AMPLIFY_APP_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          AMPLIFY_APP_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppUrl`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+
+          echo "USER_POOL_ID=${USER_POOL_ID}" >> $GITHUB_OUTPUT
+          echo "USER_POOL_CLIENT_ID=${USER_POOL_CLIENT_ID}" >> $GITHUB_OUTPUT
+          echo "AMPLIFY_APP_ID=${AMPLIFY_APP_ID}" >> $GITHUB_OUTPUT
+          echo "AMPLIFY_APP_URL=${AMPLIFY_APP_URL}" >> $GITHUB_OUTPUT
 
       - name: Create Cognito domain
         run: |
-          ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
-          COGNITO_DOMAIN="${{ steps.generate-domain-prod.outputs.COGNITO_DOMAIN }}"
-          USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "secureauditai-agent-${ENVIRONMENT}" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          COGNITO_DOMAIN="${{ steps.generate-domain.outputs.COGNITO_DOMAIN }}"
+          USER_POOL_ID="${{ steps.cf-outputs.outputs.USER_POOL_ID }}"
 
           if aws cognito-idp describe-user-pool-domain --domain "$COGNITO_DOMAIN" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
             echo "✅ Domain $COGNITO_DOMAIN already exists"
@@ -426,120 +251,182 @@ jobs:
             echo "✅ Domain $COGNITO_DOMAIN created"
           fi
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Cache frontend dependencies
+        uses: actions/cache@v3
+        id: frontend-deps-cache
         with:
-          node-version: '18'
-          
+          path: |
+            frontend/node_modules
+            ~/.npm
+          key: frontend-deps-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            frontend-deps-
+
       - name: Install frontend dependencies
+        if: steps.frontend-deps-cache.outputs.cache-hit != 'true'
         run: |
           cd frontend
           npm ci
         env:
           CI: false
 
-      - name: Deploy React frontend
-        env:
-          CI: false
+      - name: Build frontend application
+        id: build-frontend
         run: |
-          ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
-          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
-
-          # Get CloudFormation outputs
-          USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-          USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-          AMPLIFY_APP_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-          AMPLIFY_APP_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppUrl`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-
           cd frontend
 
           # Configure frontend with CloudFormation outputs
-          node ../scripts/configure-frontend.js "$USER_POOL_ID" "$USER_POOL_CLIENT_ID" "${{ env.AWS_REGION }}"
+          node ../scripts/configure-frontend.js "${{ steps.cf-outputs.outputs.USER_POOL_ID }}" "${{ steps.cf-outputs.outputs.USER_POOL_CLIENT_ID }}" "${{ env.AWS_REGION }}"
 
           # Build frontend
           echo "🔨 Building React application..."
           npm run build
-          
+
+      - name: Deploy React frontend to Amplify
+        id: deploy-amplify
+        run: |
+          cd frontend
+
           # Create a deployment package
           echo "📦 Creating deployment package..."
           cd build
           zip -r ../amplify-deployment.zip .
           cd ..
-          
+
           # Deploy to Amplify
           echo "🚀 Deploying to AWS Amplify..."
-          
+
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          AMPLIFY_APP_ID="${{ steps.cf-outputs.outputs.AMPLIFY_APP_ID }}"
+
           # Create deployment
           DEPLOYMENT_OUTPUT=$(aws amplify create-deployment \
             --app-id "$AMPLIFY_APP_ID" \
             --branch-name "$ENVIRONMENT" \
             --region ${{ env.AWS_REGION }} \
             --output json)
-          
+
           UPLOAD_URL=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.zipUploadUrl')
           JOB_ID=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.jobId')
-          
-          echo "📤 Uploading build artifacts (Job ID: $JOB_ID)..."
-          
-          # Upload the zip file to the pre-signed URL
-          curl -X PUT "$UPLOAD_URL" \
-            -H "Content-Type: application/zip" \
-            --data-binary @amplify-deployment.zip
-          
+
+          # Upload the zip file to the pre-signed URL with retry
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if curl -X PUT "$UPLOAD_URL" \
+              -H "Content-Type: application/zip" \
+              --max-time 300 \
+              --data-binary @amplify-deployment.zip; then
+              echo "✅ Frontend package uploaded successfully"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⚠️ Upload failed, retrying in 10 seconds... (attempt $RETRY_COUNT/$MAX_RETRIES)"
+                sleep 10
+              else
+                echo "❌ Failed to upload frontend package after $MAX_RETRIES attempts"
+                exit 1
+              fi
+            fi
+          done
+
           # Start the deployment
-          echo "🚀 Starting deployment..."
-          aws amplify start-deployment \
+          if aws amplify start-deployment \
             --app-id "$AMPLIFY_APP_ID" \
             --branch-name "$ENVIRONMENT" \
             --job-id "$JOB_ID" \
-            --region ${{ env.AWS_REGION }}
-          
-          echo "✅ Frontend deployment initiated!"
-          echo "🌐 Application URL: ${AMPLIFY_APP_URL}"
-          echo "📊 Monitor deployment: https://console.aws.amazon.com/amplify/home?region=${{ env.AWS_REGION }}#/${AMPLIFY_APP_ID}/${ENVIRONMENT}/${JOB_ID}"
+            --region ${{ env.AWS_REGION }}; then
+            echo "✅ Frontend deployment initiated"
+          else
+            echo "❌ Failed to start Amplify deployment"
+            exit 1
+          fi
 
       - name: Check AgentCore deployment status
+        if: github.event.inputs.environment == 'prod'
         run: |
-          ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
-          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
 
           if aws ecr describe-repositories --repository-names "secureauditai-agentcore-${ENVIRONMENT}" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-            echo "ℹ️ AgentCore repository exists - checking deployment status..."
-
-            # Check if the ECR image exists
-            if aws ecr describe-images --repository-name "secureauditai-agentcore-${ENVIRONMENT}" --region ${{ env.AWS_REGION }} --query 'imageDetails[0].imageDigest' >/dev/null 2>&1; then
-              echo "✅ AgentCore image found - deployment should be available"
-            else
-              echo "⚠️ AgentCore repository exists but no image found - deployment may be incomplete"
-            fi
-          else
-            echo "⚠️ ECR repository not found - skipping AgentCore deployment"
+            aws ecr describe-images --repository-name "secureauditai-agentcore-${ENVIRONMENT}" --region ${{ env.AWS_REGION }} --query 'imageDetails[0].imageDigest' >/dev/null 2>&1 || echo "⚠️ AgentCore repository exists but no image found"
           fi
+
+      - name: Verify deployment health
+        run: |
+          echo "🔍 Verifying deployment health..."
+
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
+
+          # Check CloudFormation stack status
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text --region ${{ env.AWS_REGION }})
+
+          if [[ "$STACK_STATUS" == *"COMPLETE"* ]]; then
+            echo "✅ CloudFormation stack is healthy: $STACK_STATUS"
+          else
+            echo "❌ CloudFormation stack is in failed state: $STACK_STATUS"
+            exit 1
+          fi
+
+          # Check Amplify app status
+          AMPLIFY_APP_ID="${{ steps.cf-outputs.outputs.AMPLIFY_APP_ID }}"
+          BRANCH_STATUS=$(aws amplify get-branch --app-id "$AMPLIFY_APP_ID" --branch-name "$ENVIRONMENT" --query 'branch.branchArn' --output text --region ${{ env.AWS_REGION }} 2>/dev/null)
+
+          if [ $? -eq 0 ]; then
+            echo "✅ Amplify branch exists and is accessible"
+          else
+            echo "⚠️ Could not verify Amplify branch status"
+          fi
+
+          echo "✅ Deployment verification completed"
+
+      - name: Cleanup on failure
+        if: failure()
+        run: |
+          echo "🧹 Cleaning up after deployment failure..."
+
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
+
+          # Check if stack exists and is in a failed state
+          if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
+            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text --region ${{ env.AWS_REGION }})
+
+            if [[ "$STACK_STATUS" == *"FAILED"* ]] || [[ "$STACK_STATUS" == *"ROLLBACK"* ]]; then
+              echo "⚠️ Stack is in failed state ($STACK_STATUS), attempting cleanup..."
+
+              # Try to delete the failed stack
+              aws cloudformation delete-stack --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }}
+              aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} || echo "⚠️ Stack deletion may still be in progress"
+            fi
+          fi
+
+          # Clean up any temporary files
+          rm -f frontend/amplify-deployment.zip packaged-template.yaml .cf-validation || true
+
+          echo "🧹 Cleanup completed"
 
   # Post-deployment validation
   validate-deployment:
     name: Validate Deployment
     runs-on: ubuntu-latest
-    needs: [deploy-dev, deploy-prod]
-    if: always() && (needs.deploy-dev.result == 'success' || needs.deploy-prod.result == 'success')
+    needs: deploy
+    if: always() && needs.deploy.result == 'success'
+    timeout-minutes: 5
     steps:
       - name: Validate deployment
         run: |
-          echo "🔍 Validating deployment across all environments..."
-
-          if [ "${{ needs.deploy-dev.result }}" = "success" ]; then
-            echo "✅ Development deployment validated"
-          fi
-
-          if [ "${{ needs.deploy-prod.result }}" = "success" ]; then
-            echo "✅ Production deployment validated"
-          fi
+          echo "🔍 Validating deployment for ${{ github.event.inputs.environment }} environment..."
+          echo "✅ ${{ github.event.inputs.environment }} deployment validated successfully"
 
   # Cleanup resources (manual trigger)
   cleanup:
     name: Cleanup Resources
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'cleanup'
+    if: github.event.inputs.environment == 'cleanup'
+    timeout-minutes: 15
     steps:
       - name: Cleanup notification
         run: |
