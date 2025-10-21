@@ -180,7 +180,7 @@ jobs:
                 ParameterKey=BedrockModelId,ParameterValue="${{ secrets.BEDROCK_MODEL_ID || 'amazon.titan-text-premier-v1:0' }}" \
                 ParameterKey=LambdaCodeBucketName,ParameterValue="${{ env.DEPLOYMENT_BUCKET }}" \
               --capabilities CAPABILITY_NAMED_IAM \
-              --region ${{ env.AWS_REGION }} &> /dev/null || (echo "Stack update failed" && aws cloudformation cancel-update-stack --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} || true && exit 1)
+              --region ${{ env.AWS_REGION }}
 
             aws cloudformation wait stack-update-complete \
               --stack-name "$STACK_NAME" \
