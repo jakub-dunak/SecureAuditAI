@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../components/ui/card';
-import { Badge, StatusBadge, SecurityBadge } from '../components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { StatusBadge, SecurityBadge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 
 interface ComplianceMetric {

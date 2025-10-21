@@ -5,12 +5,10 @@ import {
   useAuthenticator,
   View,
   Heading,
-  Button as AmplifyButton,
   Text,
-  useTheme,
   ThemeProvider
 } from '@aws-amplify/ui-react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 
 // Check if we have valid Cognito configuration for authentication

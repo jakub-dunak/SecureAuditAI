@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthenticator } from '@aws-amplify/ui-react';
-import { Button } from './ui/button';
 
 // Check if we have valid Cognito configuration for authentication
 const hasValidCognitoConfig = process.env.REACT_APP_USER_POOL_ID && process.env.REACT_APP_USER_POOL_CLIENT_ID;
