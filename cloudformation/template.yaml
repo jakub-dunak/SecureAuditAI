@@ -62,9 +62,49 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub '${AWS::StackName}-frontend-${Environment}'
-      WebsiteConfiguration:
-        IndexDocument: index.html
-        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # AWS Amplify App for Frontend Hosting
+  AmplifyApp:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: !Sub '${AWS::StackName}-frontend-${Environment}'
+      Description: !Sub 'SecureAuditAI Frontend - ${Environment}'
+      Platform: WEB
+      EnvironmentVariables:
+        - Name: _LIVE_UPDATES
+          Value: '[{"name":"Amplify Hosting","pkg":"@aws-amplify/cli","type":"npm","version":"latest"}]'
+      CustomRules:
+        - Source: '</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp)$)([^.]+$)/>'
+          Target: '/index.html'
+          Status: '200'
+      IAMServiceRole: !GetAtt AmplifyRole.Arn
+
+  AmplifyBranch:
+    Type: AWS::Amplify::Branch
+    Properties:
+      AppId: !GetAtt AmplifyApp.AppId
+      BranchName: !Sub '${Environment}'
+      EnableAutoBuild: false
+      Stage: PRODUCTION
+
+  AmplifyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-AmplifyRole-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: amplify.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess-Amplify
 
   # DynamoDB Tables
   AuditRunsTable:
@@ -709,6 +749,18 @@ Outputs:
     Value: !Ref FrontendBucket
     Export:
       Name: !Sub '${AWS::StackName}-FrontendBucket-${Environment}'
+
+  AmplifyAppId:
+    Description: Amplify App ID
+    Value: !GetAtt AmplifyApp.AppId
+    Export:
+      Name: !Sub '${AWS::StackName}-AmplifyAppId-${Environment}'
+
+  AmplifyAppUrl:
+    Description: Amplify App URL
+    Value: !Sub 'https://${Environment}.${AmplifyApp.DefaultDomain}'
+    Export:
+      Name: !Sub '${AWS::StackName}-AmplifyAppUrl-${Environment}'
 
   AuditRunsTableName:
     Description: DynamoDB table for audit runs

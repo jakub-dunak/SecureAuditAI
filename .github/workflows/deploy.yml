@@ -232,30 +232,55 @@ jobs:
           # Get CloudFormation outputs
           USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
           USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          AMPLIFY_APP_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          AMPLIFY_APP_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppUrl`].OutputValue' --output text --region ${{ env.AWS_REGION }})
 
           cd frontend
 
           # Configure frontend with CloudFormation outputs
           node ../scripts/configure-frontend.js "$USER_POOL_ID" "$USER_POOL_CLIENT_ID" "${{ env.AWS_REGION }}"
 
-          # Build and deploy
+          # Build frontend
+          echo "🔨 Building React application..."
           npm run build
           
-          FRONTEND_BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-          aws s3 sync build/ s3://${FRONTEND_BUCKET} --delete --region ${{ env.AWS_REGION }}
+          # Create a deployment package
+          echo "📦 Creating deployment package..."
+          cd build
+          zip -r ../amplify-deployment.zip .
+          cd ..
           
-          echo "✅ Frontend deployed successfully to S3: ${FRONTEND_BUCKET}"
+          # Deploy to Amplify
+          echo "🚀 Deploying to AWS Amplify..."
           
-          # Check if CloudFront distribution exists
-          DISTRIBUTION_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' --output text --region ${{ env.AWS_REGION }} 2>/dev/null || echo "")
+          # Create deployment
+          DEPLOYMENT_OUTPUT=$(aws amplify create-deployment \
+            --app-id "$AMPLIFY_APP_ID" \
+            --branch-name "$ENVIRONMENT" \
+            --region ${{ env.AWS_REGION }} \
+            --output json)
           
-          if [ -n "$DISTRIBUTION_ID" ] && [ "$DISTRIBUTION_ID" != "None" ]; then
-            echo "🔄 Invalidating CloudFront cache..."
-            aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" --region ${{ env.AWS_REGION }}
-            echo "✅ CloudFront cache invalidated"
-          else
-            echo "ℹ️  No CloudFront distribution configured - files served directly from S3"
-          fi
+          UPLOAD_URL=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.zipUploadUrl')
+          JOB_ID=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.jobId')
+          
+          echo "📤 Uploading build artifacts (Job ID: $JOB_ID)..."
+          
+          # Upload the zip file to the pre-signed URL
+          curl -X PUT "$UPLOAD_URL" \
+            -H "Content-Type: application/zip" \
+            --data-binary @amplify-deployment.zip
+          
+          # Start the deployment
+          echo "🚀 Starting deployment..."
+          aws amplify start-deployment \
+            --app-id "$AMPLIFY_APP_ID" \
+            --branch-name "$ENVIRONMENT" \
+            --job-id "$JOB_ID" \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "✅ Frontend deployment initiated!"
+          echo "🌐 Application URL: ${AMPLIFY_APP_URL}"
+          echo "📊 Monitor deployment: https://console.aws.amazon.com/amplify/home?region=${{ env.AWS_REGION }}#/${AMPLIFY_APP_ID}/${ENVIRONMENT}/${JOB_ID}"
 
   # Deploy to Production (Manual with Approval)
   deploy-prod:
@@ -401,23 +426,77 @@ jobs:
             echo "✅ Domain $COGNITO_DOMAIN created"
           fi
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+        env:
+          CI: false
+
       - name: Deploy React frontend
+        env:
+          CI: false
         run: |
           ENVIRONMENT="${{ github.event.inputs.environment || 'prod' }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
+          # Get CloudFormation outputs
+          USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          AMPLIFY_APP_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          AMPLIFY_APP_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppUrl`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+
           cd frontend
 
-          # Configure frontend
-          node scripts/configure-frontend.js
+          # Configure frontend with CloudFormation outputs
+          node ../scripts/configure-frontend.js "$USER_POOL_ID" "$USER_POOL_CLIENT_ID" "${{ env.AWS_REGION }}"
 
-          # Build and deploy
+          # Build frontend
+          echo "🔨 Building React application..."
           npm run build
-          aws s3 sync build/ s3://$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' --output text --region ${{ env.AWS_REGION }}) --delete --region ${{ env.AWS_REGION }}
-
-          # Invalidate CloudFront
-          DISTRIBUTION_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
-          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" --region ${{ env.AWS_REGION }}
+          
+          # Create a deployment package
+          echo "📦 Creating deployment package..."
+          cd build
+          zip -r ../amplify-deployment.zip .
+          cd ..
+          
+          # Deploy to Amplify
+          echo "🚀 Deploying to AWS Amplify..."
+          
+          # Create deployment
+          DEPLOYMENT_OUTPUT=$(aws amplify create-deployment \
+            --app-id "$AMPLIFY_APP_ID" \
+            --branch-name "$ENVIRONMENT" \
+            --region ${{ env.AWS_REGION }} \
+            --output json)
+          
+          UPLOAD_URL=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.zipUploadUrl')
+          JOB_ID=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.jobId')
+          
+          echo "📤 Uploading build artifacts (Job ID: $JOB_ID)..."
+          
+          # Upload the zip file to the pre-signed URL
+          curl -X PUT "$UPLOAD_URL" \
+            -H "Content-Type: application/zip" \
+            --data-binary @amplify-deployment.zip
+          
+          # Start the deployment
+          echo "🚀 Starting deployment..."
+          aws amplify start-deployment \
+            --app-id "$AMPLIFY_APP_ID" \
+            --branch-name "$ENVIRONMENT" \
+            --job-id "$JOB_ID" \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "✅ Frontend deployment initiated!"
+          echo "🌐 Application URL: ${AMPLIFY_APP_URL}"
+          echo "📊 Monitor deployment: https://console.aws.amazon.com/amplify/home?region=${{ env.AWS_REGION }}#/${AMPLIFY_APP_ID}/${ENVIRONMENT}/${JOB_ID}"
 
       - name: Check AgentCore deployment status
         run: |
