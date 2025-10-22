@@ -56,14 +56,12 @@ def setup_memory(region, environment, stack_name):
         memory_id = response['memoryId']
         print(f"✅ Memory created successfully: {memory_id}")
         
-        # Wait for memory to be active
-        print("⏳ Waiting for memory to become active...")
-        waiter = client.get_waiter('memory_active')
-        waiter.wait(memoryId=memory_id)
+        # Note: Memory is typically available immediately after creation
+        # No waiter needed as the API call is synchronous
         
         return memory_id
         
-    except client.exceptions.ResourceConflictException:
+    except client.exceptions.ConflictException:
         print(f"⚠️  Memory '{memory_name}' already exists, retrieving existing...")
         
         # List memories and find the existing one
@@ -113,12 +111,8 @@ def setup_gateway(region, environment, stack_name):
         gateway_id = response['gatewayId']
         print(f"✅ Gateway created successfully: {gateway_id}")
         
-        # Wait for gateway to be active
-        print("⏳ Waiting for gateway to become active...")
-        waiter = client.get_waiter('gateway_active')
-        waiter.wait(gatewayId=gateway_id)
-        
         # Get gateway details including endpoint
+        # Note: Gateway is typically available immediately after creation
         gateway_details = client.get_gateway(gatewayId=gateway_id)
         gateway_endpoint = gateway_details.get('gatewayEndpoint', '')
         
@@ -129,7 +123,7 @@ def setup_gateway(region, environment, stack_name):
             'gateway_endpoint': gateway_endpoint
         }
         
-    except client.exceptions.ResourceConflictException:
+    except client.exceptions.ConflictException:
         print(f"⚠️  Gateway '{gateway_name}' already exists, retrieving existing...")
         
         # List gateways and find the existing one
