@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { apiService, AuditRun } from '../services/api';
 
 interface ScanConfiguration {
   complianceFrameworks: string[];
@@ -14,33 +15,9 @@ interface ScanConfiguration {
 
 const AuditControl: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
-  const [lastScanTime, setLastScanTime] = useState<string>('2024-01-15T10:30:00Z');
-  const [scanHistory] = useState([
-    {
-      id: 'scan-001',
-      status: 'COMPLETED',
-      startedAt: '2024-01-15T10:30:00Z',
-      completedAt: '2024-01-15T10:45:00Z',
-      findingsCount: 88,
-      complianceScore: 75.2
-    },
-    {
-      id: 'scan-002',
-      status: 'COMPLETED',
-      startedAt: '2024-01-14T14:15:00Z',
-      completedAt: '2024-01-14T14:30:00Z',
-      findingsCount: 92,
-      complianceScore: 73.1
-    },
-    {
-      id: 'scan-003',
-      status: 'FAILED',
-      startedAt: '2024-01-13T09:00:00Z',
-      completedAt: '2024-01-13T09:05:00Z',
-      findingsCount: 0,
-      error: 'Permission denied accessing S3 bucket'
-    }
-  ]);
+  const [lastScanTime, setLastScanTime] = useState<string>('');
+  const [scanHistory, setScanHistory] = useState<AuditRun[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [scanConfig, setScanConfig] = useState<ScanConfiguration>({
     complianceFrameworks: ['GDPR', 'SOC2', 'PCI-DSS'],
@@ -51,20 +28,64 @@ const AuditControl: React.FC = () => {
     scheduleFrequency: '24 hours'
   });
 
+  useEffect(() => {
+    fetchAuditRuns();
+  }, []);
+
+  const fetchAuditRuns = async () => {
+    try {
+      setIsLoading(true);
+      const response = await apiService.getAuditRuns({ limit: 10 });
+      setScanHistory(response.auditRuns);
+
+      // Set last scan time from the most recent completed audit
+      const completedAudits = response.auditRuns.filter(audit => audit.Status === 'COMPLETED');
+      if (completedAudits.length > 0) {
+        setLastScanTime(completedAudits[0].CompletedAt || completedAudits[0].CreatedAt);
+      }
+    } catch (error) {
+      console.error('Error fetching audit runs:', error);
+      // Keep empty state if API fails
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleStartScan = async () => {
     setIsScanning(true);
 
     try {
-      // In a real implementation, this would call the API
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Simulate API call
+      // Call the real API to trigger a scan
+      const response = await apiService.triggerScan({
+        complianceFrameworks: scanConfig.complianceFrameworks,
+        scanConfig: {
+          resourceTypes: scanConfig.resourceTypes,
+          regions: scanConfig.regions,
+          includeTags: scanConfig.includeTags,
+        }
+      });
 
-      setLastScanTime(new Date().toISOString());
-      alert('Scan started successfully!');
+      // Refresh the audit runs list to show the new scan
+      await fetchAuditRuns();
+
+      // Show success notification
+      alert(response.message || 'Scan started successfully!');
     } catch (error) {
+      console.error('Failed to start scan:', error);
       alert('Failed to start scan. Please try again.');
     } finally {
       setIsScanning(false);
     }
+  };
+
+  const handleViewDetails = (auditRunId: string) => {
+    // Navigate to findings page with filter for this audit run
+    window.location.href = `/findings?auditRunId=${auditRunId}`;
+  };
+
+  const handleDownloadReport = (auditRunId: string) => {
+    // Navigate to reports page - the user can find the report there
+    window.location.href = '/reports';
   };
 
   const getStatusColor = (status: string) => {
@@ -79,6 +100,16 @@ const AuditControl: React.FC = () => {
         return 'bg-gray-100 text-gray-800';
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -236,42 +267,56 @@ const AuditControl: React.FC = () => {
           <CardContent>
             <div className="space-y-4">
               {scanHistory.map((scan) => (
-                <div key={scan.id} className="border rounded-lg p-4">
+                <div key={scan.AuditRunId} className="border rounded-lg p-4">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium">{scan.id}</span>
-                    <Badge className={getStatusColor(scan.status)}>
-                      {scan.status}
+                    <span className="font-medium">{scan.AuditRunId}</span>
+                    <Badge className={getStatusColor(scan.Status)}>
+                      {scan.Status}
                     </Badge>
                   </div>
 
                   <div className="text-sm text-gray-600 space-y-1">
-                    <div>Started: {new Date(scan.startedAt).toLocaleString()}</div>
-                    {scan.completedAt && (
-                      <div>Completed: {new Date(scan.completedAt).toLocaleString()}</div>
+                    <div>Started: {new Date(scan.CreatedAt).toLocaleString()}</div>
+                    {scan.CompletedAt && (
+                      <div>Completed: {new Date(scan.CompletedAt).toLocaleString()}</div>
                     )}
-                    {scan.status === 'COMPLETED' && (
+                    {scan.Status === 'COMPLETED' && (
                       <div className="flex justify-between">
-                        <span>Findings: {scan.findingsCount}</span>
-                        <span>Score: {scan.complianceScore}%</span>
+                        <span>Findings: {scan.FindingsCount || 0}</span>
+                        <span>Score: {scan.ComplianceScore?.toFixed(1) || 'N/A'}%</span>
                       </div>
                     )}
-                    {scan.error && (
-                      <div className="text-red-600">Error: {scan.error}</div>
+                    {scan.ErrorMessage && (
+                      <div className="text-red-600">Error: {scan.ErrorMessage}</div>
                     )}
                   </div>
 
-                  {scan.status === 'COMPLETED' && (
+                  {scan.Status === 'COMPLETED' && (
                     <div className="mt-3 flex space-x-2">
-                      <Button size="sm" variant="outline">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleViewDetails(scan.AuditRunId)}
+                      >
                         View Details
                       </Button>
-                      <Button size="sm" variant="outline">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDownloadReport(scan.AuditRunId)}
+                      >
                         Download Report
                       </Button>
                     </div>
                   )}
                 </div>
               ))}
+
+              {scanHistory.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  No audit runs found. Start your first compliance scan above.
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -288,19 +333,19 @@ const AuditControl: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="text-center">
                 <div className="text-2xl font-bold text-indigo-600">
-                  {new Date(lastScanTime).toLocaleDateString()}
+                  {lastScanTime ? new Date(lastScanTime).toLocaleDateString() : 'No scans yet'}
                 </div>
                 <div className="text-sm text-gray-600">Last Scan Date</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">
-                  {scanHistory[0]?.findingsCount || 0}
+                  {scanHistory.length > 0 ? scanHistory[0]?.FindingsCount || 0 : 0}
                 </div>
                 <div className="text-sm text-gray-600">Total Findings</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-blue-600">
-                  {scanHistory[0]?.complianceScore?.toFixed(1) || 'N/A'}%
+                  {scanHistory.length > 0 ? scanHistory[0]?.ComplianceScore?.toFixed(1) || 'N/A' : 'N/A'}%
                 </div>
                 <div className="text-sm text-gray-600">Compliance Score</div>
               </div>

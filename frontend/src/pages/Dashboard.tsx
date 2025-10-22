@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { StatusBadge, SecurityBadge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { apiService, AuditRun, Finding } from '../services/api';
 
 interface ComplianceMetric {
   framework: string;
@@ -14,14 +15,6 @@ interface FindingSummary {
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
   count: number;
   trend: 'up' | 'down' | 'stable';
-}
-
-interface AuditRun {
-  auditRunId: string;
-  status: string;
-  createdAt: string;
-  findingsCount: number;
-  complianceScore: number;
 }
 
 const Dashboard: React.FC = () => {
@@ -38,56 +31,104 @@ const Dashboard: React.FC = () => {
     try {
       setIsLoading(true);
 
-      // In a real implementation, these would be API calls
-      // For demo purposes, using mock data
+      // Fetch recent audit runs
+      const auditRunsResponse = await apiService.getAuditRuns({ limit: 10 });
+      const recentAudits = auditRunsResponse.auditRuns.map((audit: AuditRun) => ({
+        AuditRunId: audit.AuditRunId,
+        Status: audit.Status,
+        CreatedAt: audit.CreatedAt,
+        FindingsCount: audit.FindingsCount || 0,
+        ComplianceScore: audit.ComplianceScore || 0,
+      }));
+      setRecentAudits(recentAudits);
 
-      // Mock compliance metrics
-      setComplianceMetrics([
-        { framework: 'GDPR', score: 78, status: 'WARNING', lastScan: '2024-01-15T10:30:00Z' },
-        { framework: 'SOC 2', score: 82, status: 'PASS', lastScan: '2024-01-15T10:30:00Z' },
-        { framework: 'PCI-DSS', score: 65, status: 'FAIL', lastScan: '2024-01-15T10:30:00Z' },
-      ]);
+      // Fetch findings to calculate metrics
+      const findingsResponse = await apiService.getFindings({ limit: 1000 });
 
-      // Mock finding summary
-      setFindingSummary([
-        { severity: 'CRITICAL', count: 3, trend: 'stable' },
-        { severity: 'HIGH', count: 12, trend: 'up' },
-        { severity: 'MEDIUM', count: 28, trend: 'down' },
-        { severity: 'LOW', count: 45, trend: 'stable' },
-      ]);
+      // Calculate compliance metrics based on frameworks and findings
+      const complianceFrameworks = ['GDPR', 'SOC2', 'PCI-DSS'];
+      const complianceMetrics: ComplianceMetric[] = [];
 
-      // Mock recent audits
-      setRecentAudits([
-        {
-          auditRunId: 'audit-001',
-          status: 'COMPLETED',
-          createdAt: '2024-01-15T10:30:00Z',
-          findingsCount: 88,
-          complianceScore: 75.2,
-        },
-        {
-          auditRunId: 'audit-002',
-          status: 'COMPLETED',
-          createdAt: '2024-01-14T14:15:00Z',
-          findingsCount: 92,
-          complianceScore: 73.1,
-        },
-        {
-          auditRunId: 'audit-003',
-          status: 'RUNNING',
-          createdAt: '2024-01-15T09:00:00Z',
-          findingsCount: 0,
-          complianceScore: 0,
-        },
-      ]);
+      for (const framework of complianceFrameworks) {
+        const frameworkFindings = findingsResponse.findings.filter((f: Finding) =>
+          f.ComplianceFrameworks.includes(framework)
+        );
+
+        // Calculate compliance score (simplified - in reality this would be more complex)
+        const totalRisk = frameworkFindings.reduce((sum: number, f: Finding) => {
+          const severityWeights = { CRITICAL: 100, HIGH: 70, MEDIUM: 50, LOW: 30 };
+          return sum + (severityWeights[f.Severity] || 0);
+        }, 0);
+
+        const maxPossibleRisk = frameworkFindings.length * 100;
+        const complianceScore = frameworkFindings.length > 0
+          ? Math.max(0, 100 - (totalRisk / maxPossibleRisk) * 100)
+          : 100;
+
+        let status: 'PASS' | 'FAIL' | 'WARNING';
+        if (complianceScore >= 80) status = 'PASS';
+        else if (complianceScore >= 60) status = 'WARNING';
+        else status = 'FAIL';
+
+        const lastScan = recentAudits.length > 0 ? recentAudits[0].CreatedAt : new Date().toISOString();
+
+        complianceMetrics.push({
+          framework,
+          score: Math.round(complianceScore),
+          status,
+          lastScan,
+        });
+      }
+
+      setComplianceMetrics(complianceMetrics);
+
+      // Calculate finding summary by severity
+      const severityCounts = {
+        CRITICAL: 0,
+        HIGH: 0,
+        MEDIUM: 0,
+        LOW: 0,
+      };
+
+      findingsResponse.findings.forEach((finding: Finding) => {
+        severityCounts[finding.Severity] = (severityCounts[finding.Severity] || 0) + 1;
+      });
+
+      const findingSummary: FindingSummary[] = [
+        { severity: 'CRITICAL', count: severityCounts.CRITICAL, trend: 'stable' },
+        { severity: 'HIGH', count: severityCounts.HIGH, trend: 'stable' },
+        { severity: 'MEDIUM', count: severityCounts.MEDIUM, trend: 'stable' },
+        { severity: 'LOW', count: severityCounts.LOW, trend: 'stable' },
+      ];
+
+      setFindingSummary(findingSummary);
 
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      // Fallback to empty data if API fails
+      setComplianceMetrics([]);
+      setFindingSummary([]);
+      setRecentAudits([]);
     } finally {
       setIsLoading(false);
     }
   };
 
+
+  const handleStartNewAudit = () => {
+    // Navigate to audit control page
+    window.location.href = '/audit-control';
+  };
+
+  const handleViewLatestReport = () => {
+    // Navigate to reports page
+    window.location.href = '/reports';
+  };
+
+  const handleConfigureScanSettings = () => {
+    // Navigate to audit control page with settings focus
+    window.location.href = '/audit-control';
+  };
 
   const getTrendIcon = (trend: string) => {
     switch (trend) {
@@ -137,6 +178,7 @@ const Dashboard: React.FC = () => {
           <CardContent>
             <div className="flex flex-wrap gap-3">
               <Button
+                onClick={handleStartNewAudit}
                 icon={
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -146,6 +188,7 @@ const Dashboard: React.FC = () => {
                 Start New Audit
               </Button>
               <Button
+                onClick={handleViewLatestReport}
                 variant="secondary"
                 icon={
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -156,6 +199,7 @@ const Dashboard: React.FC = () => {
                 View Latest Report
               </Button>
               <Button
+                onClick={handleConfigureScanSettings}
                 variant="outline"
                 icon={
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -237,27 +281,41 @@ const Dashboard: React.FC = () => {
           <CardContent>
             <div className="space-y-3">
               {recentAudits.map((audit) => (
-                <div key={audit.auditRunId} className="flex items-center justify-between p-3 bg-neutral-50 rounded-lg">
+                <div key={audit.AuditRunId} className="flex items-center justify-between p-3 bg-neutral-50 rounded-lg">
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-neutral-900">{audit.auditRunId}</div>
+                    <div className="text-sm font-medium text-neutral-900">{audit.AuditRunId}</div>
                     <div className="text-xs text-neutral-500">
-                      {new Date(audit.createdAt).toLocaleDateString()}
+                      {new Date(audit.CreatedAt).toLocaleDateString()}
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right flex items-center space-x-2">
                     <div className="mb-1">
-                      <StatusBadge status={audit.status.toLowerCase() as any}>
-                        {audit.status}
+                      <StatusBadge status={audit.Status.toLowerCase() as any}>
+                        {audit.Status}
                       </StatusBadge>
                     </div>
-                    {audit.status === 'COMPLETED' && (
+                    {audit.Status === 'COMPLETED' && (
                       <div className="text-xs text-neutral-500">
-                        {audit.findingsCount} findings • {audit.complianceScore.toFixed(1)}% score
+                        {audit.FindingsCount || 0} findings • {(audit.ComplianceScore || 0).toFixed(1)}% score
                       </div>
                     )}
                   </div>
+                  {audit.Status === 'COMPLETED' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.location.href = `/findings?auditRunId=${audit.AuditRunId}`}
+                    >
+                      View Details
+                    </Button>
+                  )}
                 </div>
               ))}
+              {recentAudits.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  No recent audits found. Start your first compliance scan.
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

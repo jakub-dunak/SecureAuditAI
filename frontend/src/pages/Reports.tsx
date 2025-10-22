@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { apiService, AuditRun } from '../services/api';
 
+// Using audit runs as the basis for reports since there's no dedicated reports API
 interface ComplianceReport {
   reportId: string;
   auditRunId: string;
@@ -28,46 +30,27 @@ const Reports: React.FC = () => {
     try {
       setIsLoading(true);
 
-      // In a real implementation, this would be an API call
-      // For demo purposes, using mock data
-      const mockReports: ComplianceReport[] = [
-        {
-          reportId: 'report-001',
-          auditRunId: 'audit-001',
-          generatedAt: '2024-01-15T10:45:00Z',
-          status: 'COMPLETED',
-          s3Location: 's3://secureauditai-reports-dev/reports/audit-001/compliance-report-20240115-104500.pdf',
-          findingsCount: 88,
-          overallScore: 75.2,
-          frameworks: ['GDPR', 'SOC2', 'PCI-DSS'],
-          downloadUrl: '#'
-        },
-        {
-          reportId: 'report-002',
-          auditRunId: 'audit-002',
-          generatedAt: '2024-01-14T14:30:00Z',
-          status: 'COMPLETED',
-          s3Location: 's3://secureauditai-reports-dev/reports/audit-002/compliance-report-20240114-143000.pdf',
-          findingsCount: 92,
-          overallScore: 73.1,
-          frameworks: ['GDPR', 'SOC2', 'PCI-DSS'],
-          downloadUrl: '#'
-        },
-        {
-          reportId: 'report-003',
-          auditRunId: 'audit-003',
-          generatedAt: '2024-01-15T11:00:00Z',
-          status: 'GENERATING',
-          s3Location: '',
-          findingsCount: 0,
-          overallScore: 0,
-          frameworks: ['GDPR', 'SOC2']
-        }
-      ];
+      // Fetch completed audit runs and convert them to reports
+      const auditRunsResponse = await apiService.getAuditRuns({ status: 'COMPLETED', limit: 20 });
+      const completedAudits = auditRunsResponse.auditRuns;
 
-      setReports(mockReports);
+      // Convert audit runs to reports
+      const reports: ComplianceReport[] = completedAudits.map((audit: AuditRun) => ({
+        reportId: `report-${audit.AuditRunId}`,
+        auditRunId: audit.AuditRunId,
+        generatedAt: audit.CompletedAt || audit.CreatedAt,
+        status: 'COMPLETED' as const,
+        s3Location: `s3://secureauditai-reports-dev/reports/${audit.AuditRunId}/compliance-report-${new Date(audit.CompletedAt || audit.CreatedAt).toISOString().slice(0, 10).replace(/-/g, '')}.pdf`,
+        findingsCount: audit.FindingsCount || 0,
+        overallScore: audit.ComplianceScore || 0,
+        frameworks: audit.ComplianceFrameworks || ['GDPR', 'SOC2', 'PCI-DSS'],
+        downloadUrl: '#' // Placeholder - would need actual presigned URL
+      }));
+
+      setReports(reports);
     } catch (error) {
       console.error('Error fetching reports:', error);
+      // Keep empty state if API fails
     } finally {
       setIsLoading(false);
     }
@@ -77,12 +60,21 @@ const Reports: React.FC = () => {
     setIsGenerating(true);
 
     try {
-      // In a real implementation, this would call the API to trigger report generation
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
+      // Trigger a new compliance scan, which will generate a report when completed
+      const response = await apiService.triggerScan({
+        complianceFrameworks: ['GDPR', 'SOC2', 'PCI-DSS'],
+        scanConfig: {}
+      });
 
-      alert('Report generation started! You will receive a notification when it\'s ready.');
+      // Refresh the reports list after a short delay to show the new scan
+      setTimeout(() => {
+        fetchReports();
+      }, 2000);
+
+      alert('Compliance scan started! A report will be generated when the scan completes.');
     } catch (error) {
-      alert('Failed to generate report. Please try again.');
+      console.error('Failed to generate report:', error);
+      alert('Failed to start compliance scan. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -90,11 +82,8 @@ const Reports: React.FC = () => {
 
   const downloadReport = (report: ComplianceReport) => {
     // In a real implementation, this would generate a presigned URL and trigger download
-    if (report.downloadUrl) {
-      window.open(report.downloadUrl, '_blank');
-    } else {
-      alert('Download URL not available for this report');
-    }
+    // For now, show a message that reports are available in S3
+    alert(`Report available at: ${report.s3Location}\n\nIn a full implementation, this would download the PDF directly.`);
   };
 
   const getStatusColor = (status: string) => {
@@ -114,7 +103,15 @@ const Reports: React.FC = () => {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
+          <div className="loading-spinner w-12 h-12"></div>
+          <div className="text-center ml-4">
+            <h3 className="text-lg font-semibold text-neutral-900 mb-2">
+              Loading Reports...
+            </h3>
+            <p className="text-neutral-600">
+              Fetching your compliance reports
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -244,7 +241,7 @@ const Reports: React.FC = () => {
 
           {reports.length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              No reports available. Generate your first compliance report to get started.
+              No reports available. Complete your first compliance scan to generate reports.
             </div>
           )}
         </CardContent>
