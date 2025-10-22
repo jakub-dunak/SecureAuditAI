@@ -454,25 +454,33 @@ jobs:
 
           # Check if agent already exists
           AGENT_NAME="secureauditai_agent_${ENVIRONMENT}"
-          EXISTING_AGENT=$(aws bedrock-agent list-agents --region ${{ env.AWS_REGION }} 2>/dev/null | jq -r ".agentSummaries[] | select(.agentName==\"$AGENT_NAME\") | .agentId" 2>/dev/null | head -1)
+          echo "🔍 Checking for existing agent: $AGENT_NAME"
 
-          if [ -n "$EXISTING_AGENT" ]; then
+          # Debug: List all agents first
+          echo "📋 Listing all agents in region ${{ env.AWS_REGION }}:"
+          ALL_AGENTS=$(aws bedrock-agent list-agents --region ${{ env.AWS_REGION }} 2>/dev/null || echo "Failed to list agents")
+          echo "$ALL_AGENTS"
+
+          EXISTING_AGENT=$(echo "$ALL_AGENTS" | jq -r ".agentSummaries[] | select(.agentName==\"$AGENT_NAME\") | .agentId" 2>/dev/null | head -1)
+
+          if [ -n "$EXISTING_AGENT" ] && [ "$EXISTING_AGENT" != "null" ]; then
             echo "ℹ️  Agent '$AGENT_NAME' already exists with ID: $EXISTING_AGENT"
             echo "🔄 Attempting to update existing agent..."
 
             # Try to get the runtime ARN from existing agent
-            RUNTIME_ARN=$(aws bedrock-agent list-agents --region ${{ env.AWS_REGION }} | jq -r ".agentSummaries[] | select(.agentName==\"$AGENT_NAME\") | .agentArn" 2>/dev/null | head -1)
+            RUNTIME_ARN=$(echo "$ALL_AGENTS" | jq -r ".agentSummaries[] | select(.agentName==\"$AGENT_NAME\") | .agentArn" 2>/dev/null | head -1)
 
-            if [ -n "$RUNTIME_ARN" ]; then
+            if [ -n "$RUNTIME_ARN" ] && [ "$RUNTIME_ARN" != "null" ]; then
               echo "✅ Found existing runtime ARN: $RUNTIME_ARN"
               echo "runtime_arn=${RUNTIME_ARN}" >> $GITHUB_OUTPUT
               echo "✅ AgentCore Runtime already deployed: ${RUNTIME_ARN}"
             else
               echo "⚠️  Could not find runtime ARN for existing agent, proceeding with launch..."
-              # Continue with launch below
+              RUNTIME_ARN=""
             fi
           else
             echo "📦 Agent '$AGENT_NAME' does not exist, creating new agent..."
+            RUNTIME_ARN=""
           fi
 
           # Only launch if we don't have a runtime ARN already
