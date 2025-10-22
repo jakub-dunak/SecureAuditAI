@@ -23,7 +23,8 @@ def setup_memory(region, environment, stack_name):
         response = client.create_memory(
             name=memory_name,
             description=f"Memory for SecureAuditAI compliance agent - {environment}",
-            strategies=[
+            eventExpiryDuration=90,  # Required: days to retain events
+            memoryStrategies=[
                 {
                     'summaryMemoryStrategy': {
                         'name': 'SessionSummarizer',
