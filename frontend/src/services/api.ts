@@ -6,7 +6,7 @@ Amplify.configure(awsmobile);
 
 // API Configuration
 // In production, this should be set via environment variable or CloudFormation output
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL ||
+const API_BASE_URL = process.env.REACT_APP_API_URL ||
   'https://your-api-gateway-url.execute-api.us-west-2.amazonaws.com/dev';
 
 // API Response types

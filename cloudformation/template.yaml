@@ -542,6 +542,34 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetAuditRunsFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'GET,OPTIONS'"
+
+  AuditRunsOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref AuditRunsResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: ''
+            ResponseHeaders:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              Access-Control-Allow-Methods: "'GET,OPTIONS'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'GET,OPTIONS'"
 
   FindingsResource:
     Type: AWS::ApiGateway::Resource
@@ -565,6 +593,34 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetFindingsFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'GET,OPTIONS'"
+
+  FindingsOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref FindingsResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: ''
+            ResponseHeaders:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              Access-Control-Allow-Methods: "'GET,OPTIONS'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'GET,OPTIONS'"
 
   ScanResource:
     Type: AWS::ApiGateway::Resource
@@ -588,6 +644,34 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TriggerScanFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'POST,OPTIONS'"
+
+  ScanOptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ScanResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: ''
+            ResponseHeaders:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              Access-Control-Allow-Methods: "'POST,OPTIONS'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseHeaders:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+            Access-Control-Allow-Methods: "'POST,OPTIONS'"
 
   # Cognito Authorizer
   CognitoAuthorizer:
@@ -606,8 +690,11 @@ Resources:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
       - AuditRunsMethod
+      - AuditRunsOptionsMethod
       - FindingsMethod
+      - FindingsOptionsMethod
       - ScanMethod
+      - ScanOptionsMethod
     Properties:
       RestApiId: !Ref RestApi
       StageName: !Ref Environment
@@ -634,7 +721,7 @@ Resources:
     Properties:
       Name: !Sub '/${AWS::StackName}/${Environment}/api-gateway-url'
       Type: String
-      Value: !Sub 'https://${ApiDeployment}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+      Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
 
   UserPoolIdParameter:
     Type: AWS::SSM::Parameter
