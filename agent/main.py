@@ -12,8 +12,8 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 # Import Bedrock AgentCore SDK
-from bedrock_agentcore import BedrockAgentCoreApp
-from strands import Agent, tool
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from strands import Agent
 
 # Import custom modules
 from compliance_analyzer import analyze_compliance
