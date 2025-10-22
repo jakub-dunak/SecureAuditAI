@@ -465,7 +465,6 @@ Resources:
   # Lambda Functions
   TriggerScanFunction:
     Type: AWS::Lambda::Function
-    DependsOn: LambdaExecutionRole
     Properties:
       FunctionName: !Sub '${AWS::StackName}-TriggerScan-${Environment}'
       Runtime: python3.11
@@ -483,11 +482,10 @@ Resources:
           REPORTS_BUCKET: !Ref ReportsBucket
       Code:
         S3Bucket: !Ref LambdaCodeBucketName
-        S3Key: !Sub 'lambda/trigger_scan.zip'
+        S3Key: lambda/trigger_scan.zip
 
   GetAuditRunsFunction:
     Type: AWS::Lambda::Function
-    DependsOn: LambdaExecutionRole
     Properties:
       FunctionName: !Sub '${AWS::StackName}-GetAuditRuns-${Environment}'
       Runtime: python3.11
@@ -500,11 +498,10 @@ Resources:
           AUDIT_RUNS_TABLE: !Ref AuditRunsTable
       Code:
         S3Bucket: !Ref LambdaCodeBucketName
-        S3Key: !Sub 'lambda/api_audit_runs.zip'
+        S3Key: lambda/api_audit_runs.zip
 
   GetFindingsFunction:
     Type: AWS::Lambda::Function
-    DependsOn: LambdaExecutionRole
     Properties:
       FunctionName: !Sub '${AWS::StackName}-GetFindings-${Environment}'
       Runtime: python3.11
@@ -517,7 +514,7 @@ Resources:
           FINDINGS_TABLE: !Ref FindingsTable
       Code:
         S3Bucket: !Ref LambdaCodeBucketName
-        S3Key: !Sub 'lambda/api_findings.zip'
+        S3Key: lambda/api_findings.zip
 
   # API Gateway Resources and Methods
   AuditRunsResource:
@@ -529,7 +526,6 @@ Resources:
 
   AuditRunsMethod:
     Type: AWS::ApiGateway::Method
-    DependsOn: CognitoAuthorizer
     Properties:
       RestApiId: !Ref RestApi
       ResourceId: !Ref AuditRunsResource
@@ -562,6 +558,10 @@ Resources:
               method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
       MethodResponses:
         - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: false
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
 
   FindingsResource:
     Type: AWS::ApiGateway::Resource
@@ -572,7 +572,6 @@ Resources:
 
   FindingsMethod:
     Type: AWS::ApiGateway::Method
-    DependsOn: CognitoAuthorizer
     Properties:
       RestApiId: !Ref RestApi
       ResourceId: !Ref FindingsResource
@@ -605,6 +604,10 @@ Resources:
               method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
       MethodResponses:
         - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: false
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
 
   ScanResource:
     Type: AWS::ApiGateway::Resource
@@ -615,7 +618,6 @@ Resources:
 
   ScanMethod:
     Type: AWS::ApiGateway::Method
-    DependsOn: CognitoAuthorizer
     Properties:
       RestApiId: !Ref RestApi
       ResourceId: !Ref ScanResource
@@ -648,6 +650,10 @@ Resources:
               method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
       MethodResponses:
         - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: false
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
 
   # Cognito Authorizer
   CognitoAuthorizer:
