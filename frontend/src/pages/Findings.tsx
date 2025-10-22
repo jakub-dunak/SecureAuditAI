@@ -111,14 +111,14 @@ const Findings: React.FC = () => {
     }
   };
 
-  const updateFindingStatus = async (findingId: string, newStatus: string) => {
+  const updateFindingStatus = async (findingId: string, newStatus: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'FALSE_POSITIVE') => {
     try {
       // Call API to update finding status
       await apiService.updateFinding(findingId, { Status: newStatus });
 
       // Update local state
       setFindings(prev => prev.map(f =>
-        f.FindingId === findingId ? { ...f, Status: newStatus as any } : f
+        f.FindingId === findingId ? { ...f, Status: newStatus } : f
       ));
 
       // Show success message

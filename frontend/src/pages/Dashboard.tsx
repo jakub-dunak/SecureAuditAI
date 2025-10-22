@@ -25,7 +25,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchDashboardData = async () => {
     try {
@@ -33,14 +33,7 @@ const Dashboard: React.FC = () => {
 
       // Fetch recent audit runs
       const auditRunsResponse = await apiService.getAuditRuns({ limit: 10 });
-      const recentAudits = auditRunsResponse.auditRuns.map((audit: AuditRun) => ({
-        AuditRunId: audit.AuditRunId,
-        Status: audit.Status,
-        CreatedAt: audit.CreatedAt,
-        FindingsCount: audit.FindingsCount || 0,
-        ComplianceScore: audit.ComplianceScore || 0,
-      }));
-      setRecentAudits(recentAudits);
+      setRecentAudits(auditRunsResponse.auditRuns);
 
       // Fetch findings to calculate metrics
       const findingsResponse = await apiService.getFindings({ limit: 1000 });

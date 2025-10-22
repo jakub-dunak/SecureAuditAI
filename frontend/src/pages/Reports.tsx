@@ -61,7 +61,7 @@ const Reports: React.FC = () => {
 
     try {
       // Trigger a new compliance scan, which will generate a report when completed
-      const response = await apiService.triggerScan({
+      await apiService.triggerScan({
         complianceFrameworks: ['GDPR', 'SOC2', 'PCI-DSS'],
         scanConfig: {}
       });
