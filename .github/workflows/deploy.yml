@@ -426,6 +426,32 @@ jobs:
           cd agent
           ENVIRONMENT="${{ github.event.inputs.environment }}"
 
+          # Install agent dependencies before launch
+          echo "📦 Installing agent dependencies..."
+          pip install -r requirements.txt
+
+          # Verify agentcore is available
+          echo "🔍 Checking agentcore availability..."
+          if ! command -v agentcore &> /dev/null; then
+            echo "❌ agentcore command not found"
+            exit 1
+          fi
+
+          # Test that the agent code can be imported
+          echo "🧪 Testing agent imports..."
+          if ! python3 -c "import main; print('✅ Agent imports successful')" 2>&1; then
+            echo "❌ Agent import failed"
+            exit 1
+          fi
+
+          # Check if configuration exists
+          if [ ! -f ".bedrock_agentcore.yaml" ]; then
+            echo "❌ AgentCore configuration file .bedrock_agentcore.yaml not found"
+            echo "Listing agent directory contents:"
+            ls -la
+            exit 1
+          fi
+
           # Launch the AgentCore Runtime (without Memory/Gateway for now)
           # Capture the output which should contain the runtime ARN
           echo "🚀 Starting AgentCore launch..."
@@ -437,6 +463,8 @@ jobs:
 
           if [ $LAUNCH_EXIT_CODE -ne 0 ]; then
             echo "❌ AgentCore launch failed with exit code $LAUNCH_EXIT_CODE"
+            echo "Full launch output:"
+            echo "$LAUNCH_OUTPUT"
             exit $LAUNCH_EXIT_CODE
           fi
 
