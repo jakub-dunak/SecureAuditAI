@@ -452,48 +452,72 @@ jobs:
             exit 1
           fi
 
-          # Launch the AgentCore Runtime (without Memory/Gateway for now)
-          # Set environment variables for launch
-          export AWS_REGION=${{ env.AWS_REGION }}
-          export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+          # Check if agent already exists
+          AGENT_NAME="secureauditai_agent_${ENVIRONMENT}"
+          EXISTING_AGENT=$(aws bedrock-agent list-agents --region ${{ env.AWS_REGION }} 2>/dev/null | jq -r ".agentSummaries[] | select(.agentName==\"$AGENT_NAME\") | .agentId" 2>/dev/null | head -1)
 
-          # Capture the output which should contain the runtime ARN
-          echo "🚀 Starting AgentCore launch..."
-          LAUNCH_OUTPUT=$(agentcore launch 2>&1)
-          LAUNCH_EXIT_CODE=$?
-          echo "Launch exit code: $LAUNCH_EXIT_CODE"
-          echo "Launch output:"
-          echo "$LAUNCH_OUTPUT"
+          if [ -n "$EXISTING_AGENT" ]; then
+            echo "ℹ️  Agent '$AGENT_NAME' already exists with ID: $EXISTING_AGENT"
+            echo "🔄 Attempting to update existing agent..."
 
-          if [ $LAUNCH_EXIT_CODE -ne 0 ]; then
-            echo "❌ AgentCore launch failed with exit code $LAUNCH_EXIT_CODE"
-            echo "Full launch output:"
-            echo "$LAUNCH_OUTPUT"
-            echo ""
-            echo "🔍 Debugging information:"
-            echo "- Current directory: $(pwd)"
-            echo "- Files in directory:"
-            ls -la
-            echo "- AWS identity:"
-            aws sts get-caller-identity 2>/dev/null || echo "AWS CLI not available"
-            echo "- AgentCore config exists:"
-            [ -f ".bedrock_agentcore.yaml" ] && echo "✅ Config file found" || echo "❌ Config file missing"
-            exit $LAUNCH_EXIT_CODE
+            # Try to get the runtime ARN from existing agent
+            RUNTIME_ARN=$(aws bedrock-agent list-agents --region ${{ env.AWS_REGION }} | jq -r ".agentSummaries[] | select(.agentName==\"$AGENT_NAME\") | .agentArn" 2>/dev/null | head -1)
+
+            if [ -n "$RUNTIME_ARN" ]; then
+              echo "✅ Found existing runtime ARN: $RUNTIME_ARN"
+              echo "runtime_arn=${RUNTIME_ARN}" >> $GITHUB_OUTPUT
+              echo "✅ AgentCore Runtime already deployed: ${RUNTIME_ARN}"
+            else
+              echo "⚠️  Could not find runtime ARN for existing agent, proceeding with launch..."
+              # Continue with launch below
+            fi
+          else
+            echo "📦 Agent '$AGENT_NAME' does not exist, creating new agent..."
           fi
 
-          # Extract runtime ARN from launch output - look for various ARN patterns
-          RUNTIME_ARN=$(echo "$LAUNCH_OUTPUT" | grep -o 'arn:aws:bedrock:[^[:space:]]*' | head -1)
-
-          # If not found in launch output, try status command
+          # Only launch if we don't have a runtime ARN already
           if [ -z "$RUNTIME_ARN" ]; then
-            echo "ARN not found in launch output, checking status..."
-            RUNTIME_ARN=$(agentcore status | grep -o 'arn:aws:bedrock:[^[:space:]]*' | head -1)
+            # Launch the AgentCore Runtime (without Memory/Gateway for now)
+            # Set environment variables for launch
+            export AWS_REGION=${{ env.AWS_REGION }}
+            export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+
+            # Capture the output which should contain the runtime ARN
+            echo "🚀 Starting AgentCore launch..."
+            LAUNCH_OUTPUT=$(agentcore launch 2>&1)
+            LAUNCH_EXIT_CODE=$?
+            echo "Launch exit code: $LAUNCH_EXIT_CODE"
+            echo "Launch output:"
+            echo "$LAUNCH_OUTPUT"
+
+            if [ $LAUNCH_EXIT_CODE -ne 0 ]; then
+              echo "❌ AgentCore launch failed with exit code $LAUNCH_EXIT_CODE"
+              echo "Full launch output:"
+              echo "$LAUNCH_OUTPUT"
+              echo ""
+              echo "🔍 Debugging information:"
+              echo "- Current directory: $(pwd)"
+              echo "- Files in directory:"
+              ls -la
+              echo "- AWS identity:"
+              aws sts get-caller-identity 2>/dev/null || echo "AWS CLI not available"
+              echo "- AgentCore config exists:"
+              [ -f ".bedrock_agentcore.yaml" ] && echo "✅ Config file found" || echo "❌ Config file missing"
+              exit $LAUNCH_EXIT_CODE
+            fi
+
+            # Extract runtime ARN from launch output
+            RUNTIME_ARN=$(echo "$LAUNCH_OUTPUT" | grep -o 'arn:aws:bedrock:[^[:space:]]*' | head -1)
           fi
 
-          # If still not found, try to get it from AWS CLI
+          # If still no ARN, try other methods
+          if [ -z "$RUNTIME_ARN" ]; then
+            echo "ARN not found in launch output, trying status command..."
+            RUNTIME_ARN=$(agentcore status 2>/dev/null | grep -o 'arn:aws:bedrock:[^[:space:]]*' | head -1)
+          fi
+
           if [ -z "$RUNTIME_ARN" ]; then
             echo "ARN not found, trying AWS CLI..."
-            AGENT_NAME="secureauditai_agent_${ENVIRONMENT}"
             RUNTIME_ARN=$(aws bedrock-agent list-agents --region ${{ env.AWS_REGION }} | jq -r ".agentSummaries[] | select(.agentName==\"$AGENT_NAME\") | .agentArn" 2>/dev/null | head -1)
           fi
 
