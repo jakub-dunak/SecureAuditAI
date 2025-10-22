@@ -20,11 +20,17 @@ from compliance_analyzer import analyze_compliance
 from mock_data_generator import generate_mock_resources
 from report_generator import generate_compliance_report
 
+# Get AgentCore resource IDs from environment
+MEMORY_ID = os.environ.get('AGENTCORE_MEMORY_ID')
+GATEWAY_ID = os.environ.get('AGENTCORE_GATEWAY_ID')
+
 # Initialize Bedrock AgentCore app
 app = BedrockAgentCoreApp(
     app_name="SecureAuditAI-Agent",
     description="AI-powered cybersecurity compliance auditing agent",
-    version="1.0.0"
+    version="1.0.0",
+    memory_id=MEMORY_ID if MEMORY_ID else None,
+    gateway_id=GATEWAY_ID if GATEWAY_ID else None
 )
 
 @app.entrypoint

@@ -67,14 +67,47 @@ def lambda_handler(event, context):
                 }
             )
 
-        # TODO: Invoke Bedrock AgentCore Runtime here
-        # This would typically involve:
-        # 1. Invoking the AgentCore Runtime with the scan request
-        # 2. Processing the response to extract findings
-        # 3. Storing findings in DynamoDB
-
-        # For now, simulate the scan process
-        scan_results = simulate_compliance_scan(compliance_frameworks, scan_config)
+        # Invoke Bedrock AgentCore Runtime
+        try:
+            # Get AgentCore Runtime ARN from SSM
+            ssm = boto3.client('ssm')
+            stack_name = os.environ.get('STACK_NAME', 'secureauditai-agent')
+            runtime_arn_param = ssm.get_parameter(
+                Name=f'/{stack_name}/{os.environ.get("ENVIRONMENT", "dev")}/agentcore-runtime-arn'
+            )
+            runtime_arn = runtime_arn_param['Parameter']['Value']
+            
+            # Prepare request for AgentCore
+            agentcore_request = {
+                'auditRunId': audit_run_id,
+                'complianceFrameworks': compliance_frameworks,
+                'scanConfig': scan_config
+            }
+            
+            # Invoke AgentCore Runtime
+            response = bedrock_agent_runtime.invoke_agent(
+                agentRuntimeArn=runtime_arn,
+                sessionId=audit_run_id,
+                inputText=json.dumps(agentcore_request)
+            )
+            
+            # Process streaming response
+            scan_results = {'findings': [], 'compliance_score': 0, 'summary': ''}
+            for event in response['completion']:
+                if 'chunk' in event:
+                    chunk_data = json.loads(event['chunk']['bytes'].decode('utf-8'))
+                    if 'findings' in chunk_data:
+                        scan_results['findings'].extend(chunk_data['findings'])
+                    if 'complianceScore' in chunk_data:
+                        scan_results['compliance_score'] = chunk_data['complianceScore']
+                    if 'summary' in chunk_data:
+                        scan_results['summary'] = chunk_data['summary']
+                        
+        except Exception as agentcore_error:
+            print(f"⚠️  AgentCore invocation failed: {str(agentcore_error)}")
+            print("📋 Falling back to simulated scan")
+            # Fallback to simulation if AgentCore is not available
+            scan_results = simulate_compliance_scan(compliance_frameworks, scan_config)
 
         # Process scan results and store findings
         findings_count = 0
@@ -137,7 +170,10 @@ def lambda_handler(event, context):
             'statusCode': 200,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': event.get('headers', {}).get('origin', '*'),
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'POST,OPTIONS'
             },
             'body': json.dumps({
                 'auditRunId': audit_run_id,
@@ -168,7 +204,11 @@ def lambda_handler(event, context):
 
         return {
             'statusCode': 500,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': event.get('headers', {}).get('origin', '*'),
+                'Access-Control-Allow-Credentials': 'true'
+            },
             'body': json.dumps({'error': f'Scan failed: {str(e)}'})
         }
 

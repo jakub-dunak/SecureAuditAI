@@ -299,6 +299,24 @@ Resources:
                   - bedrock:GetFoundationModel
                 Resource:
                   - !Sub 'arn:aws:bedrock:*:*:foundation-model/${BedrockModelId}'
+        - PolicyName: AgentCoreRuntimeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore-runtime:InvokeAgent
+                  - bedrock-agentcore-runtime:RetrieveAndGenerate
+                Resource: !Sub 'arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/*'
 
   # AgentCore Runtime IAM Role
   AgentCoreRuntimeRole:
@@ -336,6 +354,33 @@ Resources:
                   - bedrock:InvokeModel
                   - bedrock:GetFoundationModel
                 Resource: !Sub 'arn:aws:bedrock:*:*:foundation-model/${BedrockModelId}'
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore-runtime:RetrieveMemoryRecords
+                  - bedrock-agentcore-runtime:GetMemoryRecord
+                  - bedrock-agentcore-runtime:PutMemoryRecord
+                  - bedrock-agentcore-runtime:DeleteMemoryRecord
+                Resource: !Sub 'arn:aws:bedrock-agent:${AWS::Region}:${AWS::AccountId}:memory/*'
+              - Effect: Allow
+                Action:
+                  - bedrock-agent:InvokeGateway
+                Resource: !Sub 'arn:aws:bedrock-agent:${AWS::Region}:${AWS::AccountId}:gateway/*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt AuditRunsTable.Arn
+                  - !GetAtt FindingsTable.Arn
+                  - !GetAtt ComplianceSnapshotsTable.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub '${ReportsBucket.Arn}/*'
 
   # API Gateway IAM Role
   ApiGatewayRole:
@@ -480,6 +525,7 @@ Resources:
           FINDINGS_TABLE: !Ref FindingsTable
           COMPLIANCE_SNAPSHOTS_TABLE: !Ref ComplianceSnapshotsTable
           REPORTS_BUCKET: !Ref ReportsBucket
+          STACK_NAME: !Ref AWS::StackName
       Code:
         S3Bucket: !Ref LambdaCodeBucketName
         S3Key: lambda/trigger_scan.zip

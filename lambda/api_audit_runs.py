@@ -35,14 +35,22 @@ def lambda_handler(event, context):
 
         return {
             'statusCode': 400,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': event.get('headers', {}).get('origin', '*'),
+                'Access-Control-Allow-Credentials': 'true'
+            },
             'body': json.dumps({'error': 'Invalid request'})
         }
 
     except Exception as e:
         return {
             'statusCode': 500,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': event.get('headers', {}).get('origin', '*'),
+                'Access-Control-Allow-Credentials': 'true'
+            },
             'body': json.dumps({'error': str(e)})
         }
 
@@ -91,7 +99,10 @@ def get_audit_runs(table, event):
         'statusCode': 200,
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': event.get('headers', {}).get('origin', '*'),
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+            'Access-Control-Allow-Methods': 'GET,OPTIONS'
         },
         'body': json.dumps({
             'auditRuns': items,
