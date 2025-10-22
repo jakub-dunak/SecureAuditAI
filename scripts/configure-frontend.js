@@ -2,16 +2,16 @@
 
 /**
  * Configures the frontend aws-exports.js with CloudFormation outputs
- * Usage: node scripts/configure-frontend.js <user-pool-id> <user-pool-client-id> [region] [environment]
+ * Usage: node scripts/configure-frontend.js <user-pool-id> <user-pool-client-id> [api-gateway-url] [region] [environment]
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const [,, userPoolId, userPoolClientId, region = 'us-west-2', environment = 'production'] = process.argv;
+const [,, userPoolId, userPoolClientId, apiGatewayUrl, region = 'us-west-2', environment = 'production'] = process.argv;
 
 if (!userPoolId || !userPoolClientId) {
-  console.error('Usage: node scripts/configure-frontend.js <user-pool-id> <user-pool-client-id> [region] [environment]');
+  console.error('Usage: node scripts/configure-frontend.js <user-pool-id> <user-pool-client-id> [api-gateway-url] [region] [environment]');
   process.exit(1);
 }
 
@@ -51,7 +51,7 @@ export default awsmobile;
 `;
 
 // Create a production environment configuration file
-const envConfig = `# Production Environment Configuration
+let envConfig = `# Production Environment Configuration
 # Auto-generated on ${new Date().toISOString()}
 
 REACT_APP_AWS_REGION=${region}
@@ -64,6 +64,10 @@ REACT_APP_ENABLE_ANALYTICS=false
 REACT_APP_ENABLE_DEBUG=false
 `;
 
+if (apiGatewayUrl) {
+  envConfig += `REACT_APP_API_BASE_URL=${apiGatewayUrl}\n`;
+}
+
 // Write the environment configuration file
 const envPath = path.join(__dirname, '..', 'frontend', '.env.production');
 fs.writeFileSync(envPath, envConfig);
@@ -75,3 +79,6 @@ console.log('✅ Frontend configuration updated successfully!');
 console.log(`   User Pool ID: ${userPoolId}`);
 console.log(`   Client ID: ${userPoolClientId}`);
 console.log(`   Region: ${region}`);
+if (apiGatewayUrl) {
+  console.log(`   API Gateway URL: ${apiGatewayUrl}`);
+}

@@ -215,12 +215,14 @@ jobs:
 
           USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
           USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
+          API_GATEWAY_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' --output text --region ${{ env.AWS_REGION }})
           AMPLIFY_APP_ID=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppId`].OutputValue' --output text --region ${{ env.AWS_REGION }})
           AMPLIFY_APP_URL=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AmplifyAppUrl`].OutputValue' --output text --region ${{ env.AWS_REGION }})
           FRONTEND_BUCKET_NAME=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue' --output text --region ${{ env.AWS_REGION }})
 
           echo "USER_POOL_ID=${USER_POOL_ID}" >> $GITHUB_OUTPUT
           echo "USER_POOL_CLIENT_ID=${USER_POOL_CLIENT_ID}" >> $GITHUB_OUTPUT
+          echo "API_GATEWAY_URL=${API_GATEWAY_URL}" >> $GITHUB_OUTPUT
           echo "AMPLIFY_APP_ID=${AMPLIFY_APP_ID}" >> $GITHUB_OUTPUT
           echo "AMPLIFY_APP_URL=${AMPLIFY_APP_URL}" >> $GITHUB_OUTPUT
           echo "FRONTEND_BUCKET_NAME=${FRONTEND_BUCKET_NAME}" >> $GITHUB_OUTPUT
@@ -261,7 +263,7 @@ jobs:
           cd frontend
 
           # Configure frontend with CloudFormation outputs
-          node ../scripts/configure-frontend.js "${{ steps.cf-outputs.outputs.USER_POOL_ID }}" "${{ steps.cf-outputs.outputs.USER_POOL_CLIENT_ID }}" "${{ env.AWS_REGION }}" "${{ github.event.inputs.environment }}"
+          node ../scripts/configure-frontend.js "${{ steps.cf-outputs.outputs.USER_POOL_ID }}" "${{ steps.cf-outputs.outputs.USER_POOL_CLIENT_ID }}" "${{ steps.cf-outputs.outputs.API_GATEWAY_URL }}" "${{ env.AWS_REGION }}" "${{ github.event.inputs.environment }}"
 
           # Build frontend for production
           npm run build:prod
