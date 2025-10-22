@@ -365,28 +365,21 @@ jobs:
         run: |
           pip install bedrock-agentcore-starter-toolkit boto3
 
-      - name: Setup AgentCore Memory and Gateway
+      - name: Setup AgentCore Memory and Gateway (Optional)
         id: setup-agentcore-resources
+        continue-on-error: true
         run: |
           cd agent
           ENVIRONMENT="${{ github.event.inputs.environment }}"
           STACK_NAME="secureauditai-agent"
           
-          # Run setup script
-          python3 setup_agentcore_resources.py ${{ env.AWS_REGION }} ${ENVIRONMENT} ${STACK_NAME}
+          echo "⚠️  Skipping Memory and Gateway setup - not available in this region/account"
+          echo "Agent will run without persistent memory features"
           
-          # Extract outputs from SSM (stored by the setup script)
-          MEMORY_ID=$(aws ssm get-parameter --name "/${STACK_NAME}/${ENVIRONMENT}/agentcore-memory-id" --query 'Parameter.Value' --output text --region ${{ env.AWS_REGION }})
-          GATEWAY_ID=$(aws ssm get-parameter --name "/${STACK_NAME}/${ENVIRONMENT}/agentcore-gateway-id" --query 'Parameter.Value' --output text --region ${{ env.AWS_REGION }})
-          GATEWAY_ENDPOINT=$(aws ssm get-parameter --name "/${STACK_NAME}/${ENVIRONMENT}/agentcore-gateway-endpoint" --query 'Parameter.Value' --output text --region ${{ env.AWS_REGION }})
-          
-          echo "memory_id=${MEMORY_ID}" >> $GITHUB_OUTPUT
-          echo "gateway_id=${GATEWAY_ID}" >> $GITHUB_OUTPUT
-          echo "gateway_endpoint=${GATEWAY_ENDPOINT}" >> $GITHUB_OUTPUT
-          
-          echo "✅ AgentCore Memory ID: ${MEMORY_ID}"
-          echo "✅ AgentCore Gateway ID: ${GATEWAY_ID}"
-          echo "✅ AgentCore Gateway Endpoint: ${GATEWAY_ENDPOINT}"
+          # Set empty outputs
+          echo "memory_id=" >> $GITHUB_OUTPUT
+          echo "gateway_id=" >> $GITHUB_OUTPUT
+          echo "gateway_endpoint=" >> $GITHUB_OUTPUT
 
       - name: Configure AgentCore Runtime
         id: configure-agentcore
@@ -410,11 +403,8 @@ jobs:
           cd agent
           ENVIRONMENT="${{ github.event.inputs.environment }}"
           
-          # Launch the AgentCore Runtime with Memory and Gateway configured
-          agentcore launch \
-            --region ${{ env.AWS_REGION }} \
-            --env AGENTCORE_MEMORY_ID=${{ steps.setup-agentcore-resources.outputs.memory_id }} \
-            --env AGENTCORE_GATEWAY_ID=${{ steps.setup-agentcore-resources.outputs.gateway_id }}
+          # Launch the AgentCore Runtime (without Memory/Gateway for now)
+          agentcore launch --region ${{ env.AWS_REGION }}
           
           # Get the runtime ARN
           RUNTIME_ARN=$(agentcore status --json | jq -r '.runtime_arn')

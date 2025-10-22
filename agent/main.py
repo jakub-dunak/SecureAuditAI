@@ -24,13 +24,11 @@ from report_generator import generate_compliance_report
 MEMORY_ID = os.environ.get('AGENTCORE_MEMORY_ID')
 GATEWAY_ID = os.environ.get('AGENTCORE_GATEWAY_ID')
 
-# Initialize Bedrock AgentCore app
+# Initialize Bedrock AgentCore app (Memory/Gateway optional)
 app = BedrockAgentCoreApp(
     app_name="SecureAuditAI-Agent",
     description="AI-powered cybersecurity compliance auditing agent",
-    version="1.0.0",
-    memory_id=MEMORY_ID if MEMORY_ID else None,
-    gateway_id=GATEWAY_ID if GATEWAY_ID else None
+    version="1.0.0"
 )
 
 @app.entrypoint
