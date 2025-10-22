@@ -25,11 +25,7 @@ MEMORY_ID = os.environ.get('AGENTCORE_MEMORY_ID')
 GATEWAY_ID = os.environ.get('AGENTCORE_GATEWAY_ID')
 
 # Initialize Bedrock AgentCore app (Memory/Gateway optional)
-app = BedrockAgentCoreApp(
-    app_name="SecureAuditAI-Agent",
-    description="AI-powered cybersecurity compliance auditing agent",
-    version="1.0.0"
-)
+app = BedrockAgentCoreApp()
 
 @app.entrypoint
 async def audit_compliance(request: Dict[str, Any]) -> Dict[str, Any]:
