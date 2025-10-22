@@ -386,11 +386,11 @@ jobs:
         run: |
           cd agent
           ENVIRONMENT="${{ github.event.inputs.environment }}"
-          
+
           # Configure the agent
           agentcore configure \
             --entrypoint main.py \
-            --agent-name "secureauditai-agent-${ENVIRONMENT}" \
+            --name "secureauditai-agent-${ENVIRONMENT}" \
             --region ${{ env.AWS_REGION }} \
             --requirements-file requirements.txt \
             --non-interactive
@@ -402,12 +402,12 @@ jobs:
         run: |
           cd agent
           ENVIRONMENT="${{ github.event.inputs.environment }}"
-          
+
           # Launch the AgentCore Runtime (without Memory/Gateway for now)
-          agentcore launch --region ${{ env.AWS_REGION }}
-          
-          # Get the runtime ARN
-          RUNTIME_ARN=$(agentcore status --json | jq -r '.runtime_arn')
+          agentcore launch
+
+          # Get the runtime ARN from status output
+          RUNTIME_ARN=$(agentcore status | grep -o 'arn:aws:bedrock:[^[:space:]]*' | head -1)
           echo "runtime_arn=${RUNTIME_ARN}" >> $GITHUB_OUTPUT
           echo "✅ AgentCore Runtime deployed: ${RUNTIME_ARN}"
           echo "📝 With Memory: ${{ steps.setup-agentcore-resources.outputs.memory_id }}"
