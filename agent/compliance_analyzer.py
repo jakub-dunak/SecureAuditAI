@@ -4,6 +4,7 @@ Uses Amazon Bedrock to analyze AWS resources against compliance frameworks
 """
 
 import json
+import os
 import boto3
 import asyncio
 from typing import Dict, List, Any
@@ -14,7 +15,7 @@ class ComplianceAnalyzer:
 
     def __init__(self):
         self.bedrock_runtime = boto3.client('bedrock-runtime')
-        self.model_id = "amazon.titan-text-premier-v1:0"
+        self.model_id = os.environ.get('BEDROCK_MODEL_ID', 'amazon.titan-text-premier-v1:0')
 
     async def analyze_compliance(self, framework: str, resources: List[Dict], scan_config: Dict) -> List[Dict]:
         """
