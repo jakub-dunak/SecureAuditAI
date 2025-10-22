@@ -542,10 +542,6 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetAuditRunsFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'GET,OPTIONS'"
 
   AuditRunsOptionsMethod:
     Type: AWS::ApiGateway::Method
@@ -561,15 +557,11 @@ Resources:
         IntegrationResponses:
           - StatusCode: 200
             ResponseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'https://${Environment}.${AmplifyApp.DefaultDomain}'"
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
               method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'GET,OPTIONS'"
 
   FindingsResource:
     Type: AWS::ApiGateway::Resource
@@ -593,10 +585,6 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetFindingsFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'GET,OPTIONS'"
 
   FindingsOptionsMethod:
     Type: AWS::ApiGateway::Method
@@ -612,15 +600,11 @@ Resources:
         IntegrationResponses:
           - StatusCode: 200
             ResponseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'https://${Environment}.${AmplifyApp.DefaultDomain}'"
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
               method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'GET,OPTIONS'"
 
   ScanResource:
     Type: AWS::ApiGateway::Resource
@@ -644,10 +628,6 @@ Resources:
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TriggerScanFunction.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'POST,OPTIONS'"
 
   ScanOptionsMethod:
     Type: AWS::ApiGateway::Method
@@ -663,15 +643,11 @@ Resources:
         IntegrationResponses:
           - StatusCode: 200
             ResponseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'https://${Environment}.${AmplifyApp.DefaultDomain}'"
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
               method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
       MethodResponses:
         - StatusCode: 200
-          ResponseHeaders:
-            Access-Control-Allow-Origin: "'*'"
-            Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-            Access-Control-Allow-Methods: "'POST,OPTIONS'"
 
   # Cognito Authorizer
   CognitoAuthorizer:
