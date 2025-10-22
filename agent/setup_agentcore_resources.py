@@ -12,7 +12,7 @@ def setup_memory(region, environment, stack_name):
     """
     Create AgentCore Memory with Session Summarizer and Semantic Memory strategies
     """
-    client = boto3.client('bedrock-agent', region_name=region)
+    client = boto3.client('bedrock-agentcore-control', region_name=region)
     
     memory_name = f"{stack_name}-memory-{environment}"
     
@@ -82,7 +82,7 @@ def setup_gateway(region, environment, stack_name):
     """
     Create AgentCore Gateway for tool integration
     """
-    client = boto3.client('bedrock-agent', region_name=region)
+    client = boto3.client('bedrock-agentcore-control', region_name=region)
     
     gateway_name = f"{stack_name}-gateway-{environment}"
     
