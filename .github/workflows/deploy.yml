@@ -404,10 +404,31 @@ jobs:
           ENVIRONMENT="${{ github.event.inputs.environment }}"
 
           # Launch the AgentCore Runtime (without Memory/Gateway for now)
-          agentcore launch
+          # Capture the output which should contain the runtime ARN
+          LAUNCH_OUTPUT=$(agentcore launch 2>&1)
+          echo "$LAUNCH_OUTPUT"
 
-          # Get the runtime ARN from status output
-          RUNTIME_ARN=$(agentcore status | grep -o 'arn:aws:bedrock:[^[:space:]]*' | head -1)
+          # Extract runtime ARN from launch output - look for various ARN patterns
+          RUNTIME_ARN=$(echo "$LAUNCH_OUTPUT" | grep -o 'arn:aws:bedrock:[^[:space:]]*' | head -1)
+
+          # If not found in launch output, try status command
+          if [ -z "$RUNTIME_ARN" ]; then
+            echo "ARN not found in launch output, checking status..."
+            RUNTIME_ARN=$(agentcore status | grep -o 'arn:aws:bedrock:[^[:space:]]*' | head -1)
+          fi
+
+          # If still not found, try to get it from AWS CLI
+          if [ -z "$RUNTIME_ARN" ]; then
+            echo "ARN not found, trying AWS CLI..."
+            AGENT_NAME="secureauditai_agent_${ENVIRONMENT}"
+            RUNTIME_ARN=$(aws bedrock-agent list-agents --region ${{ env.AWS_REGION }} | jq -r ".agentSummaries[] | select(.agentName==\"$AGENT_NAME\") | .agentArn" 2>/dev/null | head -1)
+          fi
+
+          if [ -z "$RUNTIME_ARN" ]; then
+            echo "❌ Could not find runtime ARN. Please check the agentcore launch output above."
+            exit 1
+          fi
+
           echo "runtime_arn=${RUNTIME_ARN}" >> $GITHUB_OUTPUT
           echo "✅ AgentCore Runtime deployed: ${RUNTIME_ARN}"
           echo "📝 With Memory: ${{ steps.setup-agentcore-resources.outputs.memory_id }}"
@@ -418,10 +439,10 @@ jobs:
           ENVIRONMENT="${{ github.event.inputs.environment }}"
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
           RUNTIME_ARN="${{ steps.deploy-agentcore.outputs.runtime_arn }}"
-          
+
           # Store runtime ARN for Lambda functions to use
           aws ssm put-parameter \
-            --name "/${STACK_NAME}/${ENVIRONMENT}/agentcore-runtime-arn" \
+            --name "/${STACK_NAME}/${ENVIRONMENT}/agentcore_runtime_arn" \
             --value "${RUNTIME_ARN}" \
             --type String \
             --overwrite \
