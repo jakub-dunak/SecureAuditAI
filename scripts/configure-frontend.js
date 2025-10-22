@@ -65,7 +65,7 @@ REACT_APP_ENABLE_DEBUG=false
 `;
 
 if (apiGatewayUrl) {
-  envConfig += `REACT_APP_API_BASE_URL=${apiGatewayUrl}\n`;
+  envConfig += `REACT_APP_API_URL=${apiGatewayUrl}\n`;
 }
 
 // Write the environment configuration file
