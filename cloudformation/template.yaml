@@ -556,14 +556,14 @@ Resources:
       AuthorizationType: NONE
       Integration:
         Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
         IntegrationResponses:
           - StatusCode: 200
-            ResponseTemplates:
-              application/json: ''
-            ResponseHeaders:
-              Access-Control-Allow-Origin: "'*'"
-              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-              Access-Control-Allow-Methods: "'GET,OPTIONS'"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
       MethodResponses:
         - StatusCode: 200
           ResponseHeaders:
@@ -607,14 +607,14 @@ Resources:
       AuthorizationType: NONE
       Integration:
         Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
         IntegrationResponses:
           - StatusCode: 200
-            ResponseTemplates:
-              application/json: ''
-            ResponseHeaders:
-              Access-Control-Allow-Origin: "'*'"
-              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-              Access-Control-Allow-Methods: "'GET,OPTIONS'"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
       MethodResponses:
         - StatusCode: 200
           ResponseHeaders:
@@ -658,14 +658,14 @@ Resources:
       AuthorizationType: NONE
       Integration:
         Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
         IntegrationResponses:
           - StatusCode: 200
-            ResponseTemplates:
-              application/json: ''
-            ResponseHeaders:
-              Access-Control-Allow-Origin: "'*'"
-              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
-              Access-Control-Allow-Methods: "'POST,OPTIONS'"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
       MethodResponses:
         - StatusCode: 200
           ResponseHeaders:

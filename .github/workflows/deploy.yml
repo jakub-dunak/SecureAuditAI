@@ -172,7 +172,14 @@ jobs:
           STACK_NAME="secureauditai-agent-${ENVIRONMENT}"
 
           if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
-            aws cloudformation update-stack \
+            # Enable termination protection before update
+            aws cloudformation update-termination-protection \
+              --stack-name "$STACK_NAME" \
+              --enable-termination-protection \
+              --region ${{ env.AWS_REGION }}
+
+            echo "Updating CloudFormation stack: $STACK_NAME"
+            if aws cloudformation update-stack \
               --stack-name "$STACK_NAME" \
               --template-body file://packaged-template.yaml \
               --parameters \
@@ -180,16 +187,26 @@ jobs:
                 ParameterKey=BedrockModelId,ParameterValue="${{ secrets.BEDROCK_MODEL_ID || 'amazon.titan-text-premier-v1:0' }}" \
                 ParameterKey=LambdaCodeBucketName,ParameterValue="${{ env.DEPLOYMENT_BUCKET }}" \
               --capabilities CAPABILITY_NAMED_IAM \
-              --region ${{ env.AWS_REGION }} || echo "Update attempted"
+              --rollback-configuration RollbackTriggers=[],MonitoringTimeInMinutes=5 \
+              --region ${{ env.AWS_REGION }}; then
 
-            # Check if stack is updating or already updated
-            STACK_STATUS=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text --region ${{ env.AWS_REGION }})
-            if [[ "$STACK_STATUS" == *"UPDATE"* ]]; then
+              echo "Stack update initiated successfully"
+              # Wait for stack update to complete
               aws cloudformation wait stack-update-complete \
                 --stack-name "$STACK_NAME" \
                 --region ${{ env.AWS_REGION }}
+              echo "Stack update completed successfully"
             else
-              echo "Stack update completed or no updates needed"
+              echo "Stack update failed or no changes detected"
+              # Check current stack status
+              STACK_STATUS=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text --region ${{ env.AWS_REGION }} 2>/dev/null || echo "UNKNOWN")
+              if [[ "$STACK_STATUS" == *"FAILED"* ]] || [[ "$STACK_STATUS" == *"ROLLBACK"* ]]; then
+                echo "Stack is in failed state: $STACK_STATUS"
+                echo "Please check CloudFormation console for details"
+                exit 1
+              else
+                echo "Stack status: $STACK_STATUS"
+              fi
             fi
           else
             aws cloudformation create-stack \
@@ -200,6 +217,8 @@ jobs:
                 ParameterKey=BedrockModelId,ParameterValue="${{ secrets.BEDROCK_MODEL_ID || 'amazon.titan-text-premier-v1:0' }}" \
                 ParameterKey=LambdaCodeBucketName,ParameterValue="${{ env.DEPLOYMENT_BUCKET }}" \
               --capabilities CAPABILITY_NAMED_IAM \
+              --enable-termination-protection \
+              --rollback-configuration RollbackTriggers=[],MonitoringTimeInMinutes=5 \
               --region ${{ env.AWS_REGION }}
 
             aws cloudformation wait stack-create-complete \
@@ -401,8 +420,65 @@ jobs:
     name: Cleanup Resources
     runs-on: ubuntu-latest
     if: github.event.inputs.environment == 'cleanup'
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
-      - name: Cleanup notification
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/personal-github-oidc-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Cleanup CloudFormation stacks
         run: |
-          echo "Cleanup job triggered"
+          echo "Starting cleanup of SecureAuditAI resources..."
+
+          # List of environments to clean up
+          ENVIRONMENTS=("dev" "test" "prod")
+
+          for ENV in "${ENVIRONMENTS[@]}"; do
+            STACK_NAME="secureauditai-agent-${ENV}"
+
+            echo "Checking stack: $STACK_NAME"
+
+            if aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region ${{ env.AWS_REGION }} &> /dev/null; then
+              echo "Found stack: $STACK_NAME"
+
+              # Disable termination protection first
+              echo "Disabling termination protection for $STACK_NAME..."
+              aws cloudformation update-termination-protection \
+                --stack-name "$STACK_NAME" \
+                --no-enable-termination-protection \
+                --region ${{ env.AWS_REGION }} || echo "Failed to disable termination protection, continuing..."
+
+              # Delete the stack
+              echo "Deleting stack: $STACK_NAME..."
+              aws cloudformation delete-stack \
+                --stack-name "$STACK_NAME" \
+                --region ${{ env.AWS_REGION }}
+
+              # Wait for deletion to complete
+              echo "Waiting for stack deletion to complete..."
+              aws cloudformation wait stack-delete-complete \
+                --stack-name "$STACK_NAME" \
+                --region ${{ env.AWS_REGION }} || echo "Stack deletion may still be in progress"
+
+              echo "Stack $STACK_NAME deletion initiated"
+            else
+              echo "Stack $STACK_NAME does not exist"
+            fi
+          done
+
+          # Also clean up deployment buckets
+          echo "Cleaning up deployment buckets..."
+          for ENV in "${ENVIRONMENTS[@]}"; do
+            BUCKET_NAME="secureauditai-deployment-us-west-2-${ENV}"
+
+            if aws s3 ls s3://${BUCKET_NAME} --region ${{ env.AWS_REGION }} &> /dev/null; then
+              echo "Deleting deployment bucket: $BUCKET_NAME"
+              aws s3 rb s3://${BUCKET_NAME} --force --region ${{ env.AWS_REGION }} || echo "Failed to delete bucket $BUCKET_NAME"
+            else
+              echo "Bucket $BUCKET_NAME does not exist"
+            fi
+          done
+
+          echo "Cleanup completed"
