@@ -20,6 +20,7 @@ on:
 env:
   AWS_REGION: us-west-2
   NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
 
 jobs:
   # Validate Infrastructure
@@ -361,6 +362,11 @@ jobs:
           # Upload frontend build to S3 bucket for backup/static hosting
           aws s3 sync build/ s3://${{ steps.cf-outputs.outputs.FRONTEND_BUCKET_NAME }}/ --delete --region ${{ env.AWS_REGION }}
 
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
       - name: Install Bedrock AgentCore Starter Toolkit
         run: |
           pip install bedrock-agentcore-starter-toolkit boto3
@@ -388,13 +394,30 @@ jobs:
           ENVIRONMENT="${{ github.event.inputs.environment }}"
 
           # Configure the agent
-          agentcore configure \
+          echo "🔧 Configuring AgentCore agent..."
+          CONFIG_OUTPUT=$(agentcore configure \
             --entrypoint main.py \
             --name "secureauditai_agent_${ENVIRONMENT}" \
             --region ${{ env.AWS_REGION }} \
             --requirements-file requirements.txt \
-            --non-interactive
+            --non-interactive 2>&1)
+          CONFIG_EXIT_CODE=$?
+          echo "Configure exit code: $CONFIG_EXIT_CODE"
+          echo "Configure output:"
+          echo "$CONFIG_OUTPUT"
 
+          if [ $CONFIG_EXIT_CODE -ne 0 ]; then
+            echo "❌ AgentCore configure failed with exit code $CONFIG_EXIT_CODE"
+            exit $CONFIG_EXIT_CODE
+          fi
+
+          # Verify configuration was created
+          if [ ! -f ".bedrock_agentcore.yaml" ]; then
+            echo "❌ Configuration file .bedrock_agentcore.yaml was not created"
+            exit 1
+          fi
+
+          echo "✅ AgentCore configuration completed successfully"
           echo "agent_name=secureauditai_agent_${ENVIRONMENT}" >> $GITHUB_OUTPUT
 
       - name: Deploy AgentCore Runtime
@@ -405,8 +428,17 @@ jobs:
 
           # Launch the AgentCore Runtime (without Memory/Gateway for now)
           # Capture the output which should contain the runtime ARN
+          echo "🚀 Starting AgentCore launch..."
           LAUNCH_OUTPUT=$(agentcore launch 2>&1)
+          LAUNCH_EXIT_CODE=$?
+          echo "Launch exit code: $LAUNCH_EXIT_CODE"
+          echo "Launch output:"
           echo "$LAUNCH_OUTPUT"
+
+          if [ $LAUNCH_EXIT_CODE -ne 0 ]; then
+            echo "❌ AgentCore launch failed with exit code $LAUNCH_EXIT_CODE"
+            exit $LAUNCH_EXIT_CODE
+          fi
 
           # Extract runtime ARN from launch output - look for various ARN patterns
           RUNTIME_ARN=$(echo "$LAUNCH_OUTPUT" | grep -o 'arn:aws:bedrock:[^[:space:]]*' | head -1)
