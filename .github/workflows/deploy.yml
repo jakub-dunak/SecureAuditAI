@@ -390,12 +390,12 @@ jobs:
           # Configure the agent
           agentcore configure \
             --entrypoint main.py \
-            --name "secureauditai-agent-${ENVIRONMENT}" \
+            --name "secureauditai_agent_${ENVIRONMENT}" \
             --region ${{ env.AWS_REGION }} \
             --requirements-file requirements.txt \
             --non-interactive
 
-          echo "agent_name=secureauditai-agent-${ENVIRONMENT}" >> $GITHUB_OUTPUT
+          echo "agent_name=secureauditai_agent_${ENVIRONMENT}" >> $GITHUB_OUTPUT
 
       - name: Deploy AgentCore Runtime
         id: deploy-agentcore
