@@ -37,8 +37,10 @@ def lambda_handler(event, context):
             'statusCode': 400,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': event.get('headers', {}).get('origin', '*'),
-                'Access-Control-Allow-Credentials': 'true'
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
             },
             'body': json.dumps({'error': 'Invalid request'})
         }
@@ -48,8 +50,10 @@ def lambda_handler(event, context):
             'statusCode': 500,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': event.get('headers', {}).get('origin', '*'),
-                'Access-Control-Allow-Credentials': 'true'
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
             },
             'body': json.dumps({'error': str(e)})
         }
@@ -138,7 +142,10 @@ def create_audit_run(table, event):
             'statusCode': 201,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'POST,OPTIONS'
             },
             'body': json.dumps({
                 'auditRun': audit_run,
@@ -149,7 +156,13 @@ def create_audit_run(table, event):
     except Exception as e:
         return {
             'statusCode': 400,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'POST,OPTIONS'
+            },
             'body': json.dumps({'error': f'Invalid request body: {str(e)}'})
         }
 
@@ -202,7 +215,10 @@ def update_audit_run(table, audit_run_id, event):
             'statusCode': 200,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'PUT,OPTIONS'
             },
             'body': json.dumps({
                 'auditRun': updated_item,
@@ -213,13 +229,25 @@ def update_audit_run(table, audit_run_id, event):
     except table.exceptions.ConditionalCheckFailedException:
         return {
             'statusCode': 404,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'PUT,OPTIONS'
+            },
             'body': json.dumps({'error': 'Audit run not found'})
         }
     except Exception as e:
         return {
             'statusCode': 400,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'PUT,OPTIONS'
+            },
             'body': json.dumps({'error': f'Update failed: {str(e)}'})
         }
 
@@ -237,7 +265,10 @@ def delete_audit_run(table, audit_run_id):
             'statusCode': 200,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'DELETE,OPTIONS'
             },
             'body': json.dumps({
                 'message': 'Audit run deleted successfully',
@@ -248,12 +279,24 @@ def delete_audit_run(table, audit_run_id):
     except table.exceptions.ConditionalCheckFailedException:
         return {
             'statusCode': 404,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'DELETE,OPTIONS'
+            },
             'body': json.dumps({'error': 'Audit run not found'})
         }
     except Exception as e:
         return {
             'statusCode': 500,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'DELETE,OPTIONS'
+            },
             'body': json.dumps({'error': f'Deletion failed: {str(e)}'})
         }

@@ -35,14 +35,26 @@ def lambda_handler(event, context):
 
         return {
             'statusCode': 400,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+            },
             'body': json.dumps({'error': 'Invalid request'})
         }
 
     except Exception as e:
         return {
             'statusCode': 500,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+            },
             'body': json.dumps({'error': str(e)})
         }
 
@@ -107,7 +119,10 @@ def get_findings(table, query_params):
         'statusCode': 200,
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+            'Access-Control-Allow-Methods': 'GET,OPTIONS'
         },
         'body': json.dumps(response_body)
     }
@@ -153,7 +168,10 @@ def create_finding(table, event):
             'statusCode': 201,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'POST,OPTIONS'
             },
             'body': json.dumps({
                 'finding': finding,
@@ -164,7 +182,13 @@ def create_finding(table, event):
     except Exception as e:
         return {
             'statusCode': 400,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'POST,OPTIONS'
+            },
             'body': json.dumps({'error': f'Invalid request body: {str(e)}'})
         }
 
@@ -217,7 +241,10 @@ def update_finding(table, finding_id, event):
             'statusCode': 200,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'PUT,OPTIONS'
             },
             'body': json.dumps({
                 'finding': updated_item,
@@ -228,13 +255,25 @@ def update_finding(table, finding_id, event):
     except table.exceptions.ConditionalCheckFailedException:
         return {
             'statusCode': 404,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'PUT,OPTIONS'
+            },
             'body': json.dumps({'error': 'Finding not found'})
         }
     except Exception as e:
         return {
             'statusCode': 400,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'PUT,OPTIONS'
+            },
             'body': json.dumps({'error': f'Update failed: {str(e)}'})
         }
 
@@ -252,7 +291,10 @@ def delete_finding(table, finding_id):
             'statusCode': 200,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'DELETE,OPTIONS'
             },
             'body': json.dumps({
                 'message': 'Finding deleted successfully',
@@ -263,12 +305,24 @@ def delete_finding(table, finding_id):
     except table.exceptions.ConditionalCheckFailedException:
         return {
             'statusCode': 404,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'DELETE,OPTIONS'
+            },
             'body': json.dumps({'error': 'Finding not found'})
         }
     except Exception as e:
         return {
             'statusCode': 500,
-            'headers': {'Content-Type': 'application/json'},
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                'Access-Control-Allow-Methods': 'DELETE,OPTIONS'
+            },
             'body': json.dumps({'error': f'Deletion failed: {str(e)}'})
         }
