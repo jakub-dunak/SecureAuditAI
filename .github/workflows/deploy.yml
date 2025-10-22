@@ -453,6 +453,10 @@ jobs:
           fi
 
           # Launch the AgentCore Runtime (without Memory/Gateway for now)
+          # Set environment variables for launch
+          export AWS_REGION=${{ env.AWS_REGION }}
+          export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+
           # Capture the output which should contain the runtime ARN
           echo "🚀 Starting AgentCore launch..."
           LAUNCH_OUTPUT=$(agentcore launch 2>&1)
@@ -465,6 +469,15 @@ jobs:
             echo "❌ AgentCore launch failed with exit code $LAUNCH_EXIT_CODE"
             echo "Full launch output:"
             echo "$LAUNCH_OUTPUT"
+            echo ""
+            echo "🔍 Debugging information:"
+            echo "- Current directory: $(pwd)"
+            echo "- Files in directory:"
+            ls -la
+            echo "- AWS identity:"
+            aws sts get-caller-identity 2>/dev/null || echo "AWS CLI not available"
+            echo "- AgentCore config exists:"
+            [ -f ".bedrock_agentcore.yaml" ] && echo "✅ Config file found" || echo "❌ Config file missing"
             exit $LAUNCH_EXIT_CODE
           fi
 
